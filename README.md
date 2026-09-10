@@ -46,6 +46,9 @@ Não. Só o Discord usa o desvio, e só durante a abertura. Depois tudo volta à
 **Travou na tela de login do Discord. E agora?**
 Feche o Discord e clique em Abrir Discord de novo — ele tenta por outro caminho. Se insistir, troque o país em Opções (experimente DE ou NL).
 
+**Isso pode parar de funcionar um dia?**
+Sim. A própria medida da ANPD manda o Discord criar mecanismos contra burla, então se a verificação ficar mais rígida o salto pode deixar de liberar. Enquanto funcionar, é isso aí de cima.
+
 **O que significa cada etapa na tela?**
 Pronto → Tor (conectando) → Discord (aguardando carregar) → Direta (Tor desligado, tudo normal).
 
