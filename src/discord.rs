@@ -2,8 +2,10 @@ use std::{
     ffi::OsString,
     path::{Path, PathBuf},
     process::Stdio,
-    sync::OnceLock,
 };
+
+#[cfg(target_os = "linux")]
+use std::sync::OnceLock;
 
 use anyhow::{Context, Result, bail, ensure};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
