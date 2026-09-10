@@ -1,0 +1,48 @@
+[package]
+name = "relayhop"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+description = "A temporary Tor hop for Discord startup, followed by a direct connection"
+
+[dependencies]
+anyhow = "1"
+arti-client = { version = "0.46", default-features = false, features = ["tokio", "rustls", "compression", "geoip", "static-sqlite"] }
+clap = { version = "4", features = ["derive"] }
+directories = "6"
+eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+fs2 = "0.4"
+futures = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "socks", "json"] }
+serde_json = "1"
+sysinfo = "0.38"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "process", "sync", "signal", "time"] }
+tokio-util = { version = "0.7", features = ["compat", "rt"] }
+tor-rtcompat = { version = "0.46", default-features = false, features = ["tokio", "rustls"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
+tray-icon = { version = "0.24", default-features = false }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { version = "0.3", features = ["blocking"] }
+
+[build-dependencies]
+resvg = { version = "0.48", default-features = false }
+ico = "0.5"
+winresource = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+strip = true
+
+[profile.dev]
+debug = 0
+
+[profile.test]
+debug = 0

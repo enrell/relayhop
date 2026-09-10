@@ -1,0 +1,53 @@
+name: Build packages
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+          - os: windows-latest
+            platform: windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev
+      - run: cargo build --release --locked
+      - name: Package Linux
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist/relayhop
+          cp target/release/relayhop README.md dist/relayhop/
+          cp -r assets docs dist/relayhop/
+          tar -C dist -czf dist/relayhop-linux-x64.tar.gz relayhop
+          cd dist
+          sha256sum relayhop-linux-x64.tar.gz > relayhop-linux-x64.sha256
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist/relayhop -Force
+          Copy-Item target/release/relayhop.exe, README.md dist/relayhop/
+          Copy-Item docs dist/relayhop/ -Recurse
+          Compress-Archive dist/relayhop/* dist/relayhop-windows-x64.zip
+          $hash = (Get-FileHash dist/relayhop-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  relayhop-windows-x64.zip" | Set-Content dist/relayhop-windows-x64.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relayhop-${{ matrix.platform }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256

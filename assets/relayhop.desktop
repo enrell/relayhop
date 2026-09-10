@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=RelayHop
+Comment=Um salto temporário pelo Tor para abrir o Discord
+Exec=relayhop
+Icon=relayhop
+Terminal=false
+Categories=Network;
+StartupNotify=true
+StartupWMClass=relayhop
