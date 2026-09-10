@@ -1,7 +1,16 @@
 name: Check
 on:
   push:
+    paths-ignore:
+      # Docs-only changes can't break the build; don't burn CI minutes.
+      - '**.md'
+      - 'docs/**'
+      - 'packaging/**'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'packaging/**'
 
 permissions:
   contents: read
