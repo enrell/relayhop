@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RelayHop — Transmissão de tela do Discord em 1 clique</title>
+<meta name="description" content="RelayHop abre seu Discord com saída em outro país e depois volta à sua conexão normal. Sem VPN ligada, sem mensalidade, sem modificar o Discord.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' rx='64' fill='%230E1628'/%3E%3Cpath d='M58 171V114C58 82 79 61 109 61H142C174 61 193 80 193 105C193 132 172 148 144 148H113' stroke='%2383ACFF' stroke-width='22' stroke-linecap='round' fill='none'/%3E%3Cpath d='M60 187H196M174 165L196 187L174 209' stroke='%2375DCCA' stroke-width='19' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='58' cy='187' r='14' fill='%23D5FFF0'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0b1120; --card: #151d33; --line: #263154;
+    --text: #e8edf7; --muted: #94a3c4;
+    --accent: #8fb4ff; --teal: #75dcca;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 20px; }
+  header.hero { text-align: center; padding: 64px 20px 32px; }
+  header.hero img.logo {
+    width: 96px; height: 96px; border-radius: 24px;
+    box-shadow: 0 8px 32px rgba(143,180,255,.25);
+  }
+  h1 { font-size: 2.6rem; margin: 16px 0 4px; }
+  h1 span { color: var(--accent); }
+  .tagline { color: var(--muted); font-size: 1.15rem; max-width: 620px; margin: 0 auto; }
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 28px 0 8px; }
+  .btn {
+    display: inline-block; padding: 14px 28px; border-radius: 12px;
+    font-weight: 700; font-size: 1.05rem; text-decoration: none;
+    background: linear-gradient(135deg, #5b8def, #75dcca); color: #0b1120;
+  }
+  .btn.secondary { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+  .note { color: var(--muted); font-size: .9rem; }
+  section { padding: 28px 0; }
+  h2 { font-size: 1.5rem; margin-bottom: 12px; }
+  .steps { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 18px;
+  }
+  .card .n {
+    display: inline-block; width: 30px; height: 30px; line-height: 30px;
+    border-radius: 50%; background: var(--accent); color: #0b1120;
+    font-weight: 800; text-align: center; margin-bottom: 8px;
+  }
+  pre {
+    background: #0a0f1e; border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px; overflow-x: auto; font-size: .9rem; position: relative;
+  }
+  pre button {
+    position: absolute; top: 8px; right: 8px; background: var(--card);
+    color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+    padding: 4px 10px; cursor: pointer; font-size: .8rem;
+  }
+  details.card { margin-bottom: 10px; }
+  details.card summary { cursor: pointer; font-weight: 700; }
+  footer { text-align: center; color: var(--muted); font-size: .9rem; padding: 32px 20px 48px; }
+  footer a { color: var(--accent); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <img class="logo" alt="RelayHop" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' rx='64' fill='%230E1628'/%3E%3Cpath d='M58 171V114C58 82 79 61 109 61H142C174 61 193 80 193 105C193 132 172 148 144 148H113' stroke='%2383ACFF' stroke-width='22' stroke-linecap='round' fill='none'/%3E%3Cpath d='M60 187H196M174 165L196 187L174 209' stroke='%2375DCCA' stroke-width='19' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='58' cy='187' r='14' fill='%23D5FFF0'/%3E%3C/svg%3E">
+    <h1>Relay<span>Hop</span></h1>
+    <p class="tagline">Transmissão de tela do Discord em 1 clique. Ele abre seu Discord passando rapidinho por outro país e depois volta à sua internet normal — sem VPN ligada, sem mensalidade, sem mexer no Discord.</p>
+    <div class="cta">
+      <a class="btn" href="https://github.com/enrell/relayhop/releases/latest/download/relayhop.exe">Baixar para Windows</a>
+      <a class="btn secondary" href="https://github.com/enrell/relayhop/releases/latest/download/relayhop-linux-x64.tar.gz">Baixar para Linux</a>
+    </div>
+    <p class="note">Grátis e de código aberto (<a href="https://github.com/enrell/relayhop">ver no GitHub</a>). <a href="https://github.com/enrell/relayhop/releases">Todas as versões</a>.</p>
+  </header>
+
+  <section>
+    <h2>Como usar</h2>
+    <div class="steps">
+      <div class="card"><span class="n">1</span><br><strong>Feche o Discord</strong> de verdade (botão direito no ícone perto do relógio → Sair).</div>
+      <div class="card"><span class="n">2</span><br>Abra o <strong>RelayHop</strong> e clique em <strong>Abrir Discord</strong>.</div>
+      <div class="card"><span class="n">3</span><br>Quando carregar, clique em <strong>usar conexão direta</strong> e transmita normalmente.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Instalação rápida</h2>
+    <p><strong>Linux</strong> (instala em <code>~/.local/bin</code>, sem sudo):</p>
+    <pre><button onclick="navigator.clipboard.writeText(this.parentElement.innerText.replace('copiar','').trim())">copiar</button><code>curl -fsSL https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.sh | sh</code></pre>
+    <p><strong>Windows</strong> (PowerShell, sem admin):</p>
+    <pre><button onclick="navigator.clipboard.writeText(this.parentElement.innerText.replace('copiar','').trim())">copiar</button><code>irm https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.ps1 | iex</code></pre>
+  </section>
+
+  <section>
+    <h2>Perguntas frequentes</h2>
+    <details class="card"><summary>Por que o Discord bloqueou minha transmissão?</summary>
+      <p>Em agosto de 2026 a ANPD determinou a suspensão do recurso "Go Live" no Brasil, e o Discord desativou transmissões para acessos do país. O RelayHop contorna isso abrindo o Discord com saída em outro país.</p>
+    </details>
+    <details class="card"><summary>É vírus? Vou ser banido?</summary>
+      <p>Não é vírus — o código é todo aberto aqui no GitHub. Ele não modifica o Discord nem injeta nada, só abre o Discord oficial com uma configuração de rede. O Windows pode mostrar um aviso por ser um programa novo sem certificado pago.</p>
+    </details>
+    <details class="card"><summary>Minha internet vai ficar lenta?</summary>
+      <p>Não. Só o Discord usa o desvio, e só durante a abertura. Depois tudo volta à sua conexão normal.</p>
+    </details>
+    <details class="card"><summary>Travou na tela de login. E agora?</summary>
+      <p>Feche o Discord e tente de novo — ele busca outra saída. Se insistir, troque o país em Opções (experimente DE ou NL).</p>
+    </details>
+    <details class="card"><summary>Isso pode parar de funcionar?</summary>
+      <p>Sim: a medida da ANPD exige mecanismos contra burla, então se a verificação endurecer o salto pode deixar de liberar.</p>
+    </details>
+  </section>
+
+  <footer>
+    RelayHop é um projeto independente, sem afiliação com Discord ou Tor Project. Licença MIT.<br>
+    <a href="https://github.com/enrell/relayhop">Código-fonte</a> · <a href="https://github.com/enrell/relayhop/issues">Reportar problema</a>
+  </footer>
+
+</div>
+</body>
+</html>
