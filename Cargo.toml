@@ -1,6 +1,7 @@
 [package]
 name = "relayhop"
 version = "0.2.0"
+license = "MIT"
 edition = "2024"
 rust-version = "1.91"
 description = "A temporary Tor hop for Discord startup, followed by a direct connection"

@@ -31,7 +31,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist/relayhop
-          cp target/release/relayhop README.md dist/relayhop/
+          cp target/release/relayhop README.md LICENSE dist/relayhop/
           cp -r assets docs dist/relayhop/
           tar -C dist -czf dist/relayhop-linux-x64.tar.gz relayhop
           cd dist
@@ -41,7 +41,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory dist/relayhop -Force
-          Copy-Item target/release/relayhop.exe, README.md dist/relayhop/
+          Copy-Item target/release/relayhop.exe, README.md, LICENSE dist/relayhop/
           Copy-Item assets, docs dist/relayhop/ -Recurse
           Compress-Archive dist/relayhop/* dist/relayhop-windows-x64.zip
           $hash = (Get-FileHash dist/relayhop-windows-x64.zip -Algorithm SHA256).Hash.ToLower()

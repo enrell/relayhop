@@ -142,4 +142,4 @@ Verificações: `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D 
 
 ## Autoria
 
-Projeto independente, feito do zero em Rust. Sem afiliação com Discord ou Tor Project. Licença de distribuição a definir.
+Projeto independente, feito do zero em Rust. Sem afiliação com Discord ou Tor Project. Licença [MIT](LICENSE); dependências mantêm suas licenças.
