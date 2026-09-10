@@ -1,123 +1,659 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RelayHop — Transmissão de tela do Discord em 1 clique</title>
-<meta name="description" content="RelayHop abre seu Discord com saída em outro país e depois volta à sua conexão normal. Sem VPN ligada, sem mensalidade, sem modificar o Discord.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' rx='64' fill='%230E1628'/%3E%3Cpath d='M58 171V114C58 82 79 61 109 61H142C174 61 193 80 193 105C193 132 172 148 144 148H113' stroke='%2383ACFF' stroke-width='22' stroke-linecap='round' fill='none'/%3E%3Cpath d='M60 187H196M174 165L196 187L174 209' stroke='%2375DCCA' stroke-width='19' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='58' cy='187' r='14' fill='%23D5FFF0'/%3E%3C/svg%3E">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="RelayHop abre o Discord com uma saída temporária em outro país e depois volta à sua conexão normal.">
+<meta name="theme-color" content="#0f1012">
+<link rel="icon" type="image/png" href="relayhop.png">
+<title>RelayHop — transmissão do Discord, de volta.</title>
+
 <style>
-  :root {
-    --bg: #0b1120; --card: #151d33; --line: #263154;
-    --text: #e8edf7; --muted: #94a3c4;
-    --accent: #8fb4ff; --teal: #75dcca;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    line-height: 1.6;
-  }
-  .wrap { max-width: 860px; margin: 0 auto; padding: 0 20px; }
-  header.hero { text-align: center; padding: 64px 20px 32px; }
-  header.hero img.logo {
-    width: 96px; height: 96px; border-radius: 24px;
-    box-shadow: 0 8px 32px rgba(143,180,255,.25);
-  }
-  h1 { font-size: 2.6rem; margin: 16px 0 4px; }
-  h1 span { color: var(--accent); }
-  .tagline { color: var(--muted); font-size: 1.15rem; max-width: 620px; margin: 0 auto; }
-  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 28px 0 8px; }
-  .btn {
-    display: inline-block; padding: 14px 28px; border-radius: 12px;
-    font-weight: 700; font-size: 1.05rem; text-decoration: none;
-    background: linear-gradient(135deg, #5b8def, #75dcca); color: #0b1120;
-  }
-  .btn.secondary { background: var(--card); color: var(--text); border: 1px solid var(--line); }
-  .note { color: var(--muted); font-size: .9rem; }
-  section { padding: 28px 0; }
-  h2 { font-size: 1.5rem; margin-bottom: 12px; }
-  .steps { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-  .card {
-    background: var(--card); border: 1px solid var(--line);
-    border-radius: 14px; padding: 18px;
-  }
-  .card .n {
-    display: inline-block; width: 30px; height: 30px; line-height: 30px;
-    border-radius: 50%; background: var(--accent); color: #0b1120;
-    font-weight: 800; text-align: center; margin-bottom: 8px;
-  }
-  pre {
-    background: #0a0f1e; border: 1px solid var(--line); border-radius: 10px;
-    padding: 14px; overflow-x: auto; font-size: .9rem; position: relative;
-  }
-  pre button {
-    position: absolute; top: 8px; right: 8px; background: var(--card);
-    color: var(--text); border: 1px solid var(--line); border-radius: 8px;
-    padding: 4px 10px; cursor: pointer; font-size: .8rem;
-  }
-  details.card { margin-bottom: 10px; }
-  details.card summary { cursor: pointer; font-weight: 700; }
-  footer { text-align: center; color: var(--muted); font-size: .9rem; padding: 32px 20px 48px; }
-  footer a { color: var(--accent); }
-  a { color: var(--accent); }
+:root{
+  --bg:#0f1012;
+  --panel:#141619;
+  --ink:#f1efe9;
+  --muted:#97958f;
+  --line:#2d3035;
+  --line2:#44474d;
+  --blue:#8ca8ff;
+  --green:#63d6a4;
+  --max:980px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit}
+.wrap{width:min(calc(100% - 36px),var(--max));margin:auto}
+
+.top{
+  border-bottom:1px solid var(--line);
+}
+.top-inner{
+  min-height:64px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+}
+.brand{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  text-decoration:none;
+  font-weight:800;
+  letter-spacing:-.02em;
+}
+.brand svg{width:28px;height:28px}
+.brand img{width:28px;height:28px;border-radius:7px}
+.brand small{
+  color:var(--muted);
+  font:500 11px/1 ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+.top nav{display:flex;gap:18px;font-size:13px}
+.top nav a{text-underline-offset:4px}
+
+.hero{
+  padding:78px 0 64px;
+  max-width:810px;
+}
+.eyebrow{
+  color:var(--muted);
+  font:700 11px/1.3 ui-monospace,SFMono-Regular,Consolas,monospace;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+h1{
+  margin:16px 0 20px;
+  font-size:clamp(52px,8vw,82px);
+  line-height:.96;
+  letter-spacing:-.065em;
+}
+.lead{
+  max-width:730px;
+  margin:0;
+  font-size:20px;
+  line-height:1.55;
+}
+.actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-top:30px;
+}
+.btn{
+  display:inline-flex;
+  min-height:48px;
+  align-items:center;
+  justify-content:center;
+  padding:0 16px;
+  border:1px solid #696c72;
+  border-radius:3px;
+  text-decoration:none;
+  font-weight:750;
+  font-size:14px;
+}
+.btn.primary{
+  background:var(--ink);
+  color:#101113;
+  border-color:var(--ink);
+}
+.links{
+  display:flex;
+  gap:18px;
+  margin-top:14px;
+  color:var(--muted);
+  font-size:13px;
+}
+.links a{text-underline-offset:3px}
+
+/* FLOW */
+.flow-section{
+  padding:18px 0 66px;
+  border-bottom:1px solid var(--line);
+}
+.flow-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  margin-bottom:14px;
+}
+.flow-label{
+  color:var(--muted);
+  font:700 11px/1.3 ui-monospace,SFMono-Regular,Consolas,monospace;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.phase{
+  position:relative;
+  width:190px;
+  height:18px;
+  overflow:hidden;
+  text-align:right;
+  color:var(--muted);
+  font:600 11px/18px ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+.phase span{
+  position:absolute;
+  inset:0;
+  opacity:0;
+}
+.phase .p1{animation:phase1 8s infinite}
+.phase .p2{animation:phase2 8s infinite;color:var(--green)}
+
+.flow-card{
+  position:relative;
+  height:238px;
+  border:1px solid var(--line);
+  background:#111316;
+  overflow:hidden;
+}
+.flow-card::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.022) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.022) 1px,transparent 1px);
+  background-size:32px 32px;
+  mask-image:linear-gradient(to bottom,rgba(0,0,0,.9),transparent 92%);
+  pointer-events:none;
+}
+.flow-svg{
+  width:100%;
+  height:100%;
+  display:block;
+}
+.base-route{
+  fill:none;
+  stroke:#30343a;
+  stroke-width:2;
+}
+.tor-route{
+  fill:none;
+  stroke:var(--blue);
+  stroke-width:2.5;
+  stroke-linecap:round;
+  stroke-dasharray:540;
+  stroke-dashoffset:540;
+  filter:drop-shadow(0 0 5px rgba(140,168,255,.18));
+  animation:torRoute 8s infinite;
+}
+.direct-route{
+  fill:none;
+  stroke:var(--green);
+  stroke-width:2.5;
+  stroke-linecap:round;
+  stroke-dasharray:520;
+  stroke-dashoffset:520;
+  filter:drop-shadow(0 0 6px rgba(99,214,164,.18));
+  animation:directRoute 8s infinite;
+}
+.packet{
+  fill:var(--blue);
+  opacity:0;
+  filter:drop-shadow(0 0 5px rgba(140,168,255,.55));
+}
+.packet.tor{
+  offset-path:path("M 105 125 C 210 125, 245 88, 340 88 S 480 125, 575 125");
+  animation:packetTor 8s infinite;
+}
+.packet.direct{
+  fill:var(--green);
+  offset-path:path("M 105 125 C 250 185, 430 185, 575 125");
+  animation:packetDirect 8s infinite;
+}
+
+.node-circle{
+  fill:#15181c;
+  stroke:#5b6067;
+  stroke-width:2;
+}
+.node-ring{
+  fill:none;
+  stroke:#262a2f;
+  stroke-width:8;
+}
+.node-tor{
+  animation:torNode 8s infinite;
+}
+.node-discord{
+  animation:discordNode 8s infinite;
+}
+.node-label{
+  fill:var(--ink);
+  font:700 15px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  text-anchor:middle;
+}
+.node-sub{
+  fill:var(--muted);
+  font:500 11px ui-monospace,SFMono-Regular,Consolas,monospace;
+  text-anchor:middle;
+}
+.country{
+  fill:var(--muted);
+  font:700 10px ui-monospace,SFMono-Regular,Consolas,monospace;
+  text-anchor:middle;
+  letter-spacing:.08em;
+}
+.tor-x{
+  opacity:0;
+  animation:torOff 8s infinite;
+}
+.direct-badge{
+  opacity:0;
+  animation:directBadge 8s infinite;
+}
+.direct-pill{
+  fill:#13231d;
+  stroke:#2c7357;
+}
+.direct-text{
+  fill:var(--green);
+  font:700 10px ui-monospace,SFMono-Regular,Consolas,monospace;
+  text-anchor:middle;
+  letter-spacing:.08em;
+}
+
+@keyframes torRoute{
+  0%,8%{stroke-dashoffset:540;opacity:1}
+  26%,48%{stroke-dashoffset:0;opacity:1}
+  57%,100%{stroke-dashoffset:0;opacity:.10}
+}
+@keyframes directRoute{
+  0%,52%{stroke-dashoffset:520;opacity:0}
+  58%{opacity:1}
+  76%,94%{stroke-dashoffset:0;opacity:1}
+  100%{stroke-dashoffset:520;opacity:0}
+}
+@keyframes packetTor{
+  0%,9%{offset-distance:0%;opacity:0}
+  12%{opacity:1}
+  43%{offset-distance:100%;opacity:1}
+  48%,100%{offset-distance:100%;opacity:0}
+}
+@keyframes packetDirect{
+  0%,59%{offset-distance:0%;opacity:0}
+  62%{opacity:1}
+  88%{offset-distance:100%;opacity:1}
+  94%,100%{offset-distance:100%;opacity:0}
+}
+@keyframes torNode{
+  0%,48%{opacity:1}
+  58%,94%{opacity:.28}
+  100%{opacity:1}
+}
+@keyframes discordNode{
+  0%,40%{stroke:#5b6067}
+  46%,94%{stroke:var(--green)}
+  100%{stroke:#5b6067}
+}
+@keyframes torOff{
+  0%,52%{opacity:0}
+  60%,94%{opacity:1}
+  100%{opacity:0}
+}
+@keyframes directBadge{
+  0%,58%{opacity:0}
+  65%,94%{opacity:1}
+  100%{opacity:0}
+}
+@keyframes phase1{
+  0%,47%{opacity:1}
+  53%,100%{opacity:0}
+}
+@keyframes phase2{
+  0%,52%{opacity:0}
+  58%,94%{opacity:1}
+  100%{opacity:0}
+}
+
+/* REST */
+.section{
+  padding:58px 0;
+  border-bottom:1px solid var(--line);
+}
+.section-grid{
+  display:grid;
+  grid-template-columns:190px 1fr;
+  gap:52px;
+}
+.small-label{
+  color:var(--muted);
+  font:700 11px/1.3 ui-monospace,SFMono-Regular,Consolas,monospace;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.section h2{
+  margin:8px 0 0;
+  font-size:28px;
+  line-height:1;
+  letter-spacing:-.045em;
+}
+.steps{border-top:1px solid #55585e}
+.step{
+  display:grid;
+  grid-template-columns:34px 175px 1fr;
+  gap:15px;
+  padding:18px 0;
+  border-bottom:1px solid var(--line);
+}
+.step-num{
+  color:var(--blue);
+  font:700 12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+.step b{font-size:14px}
+.step span{color:var(--muted);font-size:13px}
+
+.install-list{display:grid;gap:12px}
+.install-row{
+  display:grid;
+  grid-template-columns:85px 1fr;
+  gap:16px;
+  align-items:center;
+}
+.install-row b{font-size:13px}
+.code{
+  position:relative;
+  padding:14px 52px 14px 14px;
+  background:#090a0b;
+  border:1px solid #292b2f;
+  border-radius:2px;
+  color:#e9e7e1;
+  overflow:auto;
+  font:500 11.5px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+.copy{
+  position:absolute;
+  right:8px;
+  top:8px;
+  border:1px solid #484b50;
+  background:#1b1d20;
+  color:#ddd;
+  padding:5px 7px;
+  cursor:pointer;
+  border-radius:2px;
+  font:600 10px/1 ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+.faq{border-top:1px solid #55585e}
+details{border-bottom:1px solid var(--line)}
+summary{
+  display:flex;
+  justify-content:space-between;
+  gap:18px;
+  padding:16px 0;
+  cursor:pointer;
+  list-style:none;
+  font-weight:700;
+  font-size:13px;
+}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--muted)}
+details[open] summary::after{content:"−"}
+details p{
+  margin:0 36px 18px 0;
+  max-width:690px;
+  color:var(--muted);
+  font-size:13px;
+}
+
+footer{
+  padding:22px 0 28px;
+  color:#7f7d77;
+  font-size:11px;
+}
+.footer-inner{
+  display:flex;
+  justify-content:space-between;
+  gap:18px;
+  flex-wrap:wrap;
+}
+.footer-links{display:flex;gap:16px}
+
+@media(max-width:760px){
+  .section-grid{grid-template-columns:1fr;gap:26px}
+  .step{grid-template-columns:30px 1fr}
+  .step span{grid-column:2}
+  .install-row{grid-template-columns:1fr}
+}
+@media(max-width:560px){
+  .wrap{width:min(calc(100% - 24px),var(--max))}
+  .top nav a:not(:last-child){display:none}
+  .brand small{display:none}
+  .hero{padding:52px 0}
+  h1{font-size:50px}
+  .lead{font-size:17px}
+  .actions{display:grid}
+  .btn{width:100%}
+  .flow-head{align-items:flex-start}
+  .phase{width:140px}
+  .flow-card{height:210px}
+  .section{padding:50px 0}
+}
+@media(prefers-reduced-motion:reduce){
+  .tor-route,.direct-route,.packet,.node-tor,.node-discord,.tor-x,.direct-badge,.phase span{animation:none!important}
+  .tor-route{stroke-dashoffset:0;opacity:.12}
+  .direct-route{stroke-dashoffset:0;opacity:1}
+  .direct-badge,.tor-x,.phase .p2{opacity:1}
+  .phase .p1{opacity:0}
+}
 </style>
 </head>
 <body>
-<div class="wrap">
 
-  <header class="hero">
-    <img class="logo" alt="RelayHop" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' rx='64' fill='%230E1628'/%3E%3Cpath d='M58 171V114C58 82 79 61 109 61H142C174 61 193 80 193 105C193 132 172 148 144 148H113' stroke='%2383ACFF' stroke-width='22' stroke-linecap='round' fill='none'/%3E%3Cpath d='M60 187H196M174 165L196 187L174 209' stroke='%2375DCCA' stroke-width='19' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='58' cy='187' r='14' fill='%23D5FFF0'/%3E%3C/svg%3E">
-    <h1>Relay<span>Hop</span></h1>
-    <p class="tagline">Transmissão de tela do Discord em 1 clique. Ele abre seu Discord passando rapidinho por outro país e depois volta à sua internet normal — sem VPN ligada, sem mensalidade, sem mexer no Discord.</p>
-    <div class="cta">
-      <a class="btn" href="https://github.com/enrell/relayhop/releases/latest/download/relayhop.exe">Baixar para Windows</a>
-      <a class="btn secondary" href="https://github.com/enrell/relayhop/releases/latest/download/relayhop-linux-x64.tar.gz">Baixar para Linux</a>
+<header class="top">
+  <div class="wrap top-inner">
+    <a class="brand" href="#">
+      <img src="relayhop.png" alt="RelayHop" width="28" height="28">
+      <span>RelayHop</span>
+      <small>v0.2 · MIT</small>
+    </a>
+    <nav>
+      <a href="#como-usar">Como usar</a>
+      <a href="#instalar">Instalar</a>
+      <a href="https://github.com/enrell/relayhop">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">utilitário para Windows + Linux</div>
+      <h1>Transmissão do Discord, de volta.</h1>
+      <p class="lead">
+        O RelayHop abre o <strong>Discord oficial</strong> passando rapidamente por outro país.
+        Quando ele termina de carregar, o desvio é desligado e a transmissão segue pela
+        <strong>sua conexão normal</strong>.
+      </p>
+
+      <div class="actions">
+        <a class="btn primary" href="https://github.com/enrell/relayhop/releases/latest/download/relayhop.exe">↓ Baixar para Windows</a>
+        <a class="btn" href="https://github.com/enrell/relayhop/releases/latest/download/relayhop-linux-x64.tar.gz">↓ Baixar para Linux</a>
+      </div>
+
+      <div class="links">
+        <a href="https://github.com/enrell/relayhop/releases">todas as versões</a>
+        <a href="https://github.com/enrell/relayhop">ver código-fonte</a>
+      </div>
+    </section>
+  </div>
+
+  <section class="flow-section">
+    <div class="wrap">
+      <div class="flow-head">
+        <div class="flow-label">o que acontece</div>
+        <div class="phase" aria-hidden="true">
+          <span class="p1">abrindo via Tor…</span>
+          <span class="p2">agora direto ✓</span>
+        </div>
+      </div>
+
+      <div class="flow-card">
+        <svg class="flow-svg" viewBox="0 0 680 238" role="img" aria-label="O Discord abre por uma saída Tor no exterior e depois volta para uma conexão direta">
+          <!-- reference routes -->
+          <path class="base-route" d="M105 125 C210 125 245 88 340 88 S480 125 575 125"/>
+          <path class="base-route" d="M105 125 C250 185 430 185 575 125"/>
+
+          <!-- animated routes -->
+          <path class="tor-route" d="M105 125 C210 125 245 88 340 88 S480 125 575 125"/>
+          <path class="direct-route" d="M105 125 C250 185 430 185 575 125"/>
+
+          <!-- packets -->
+          <circle class="packet tor" r="5"/>
+          <circle class="packet direct" r="5"/>
+
+          <!-- BR -->
+          <g>
+            <circle class="node-ring" cx="105" cy="125" r="30"/>
+            <circle class="node-circle" cx="105" cy="125" r="24"/>
+            <text class="country" x="105" y="129">BR</text>
+            <text class="node-label" x="105" y="180">Você</text>
+            <text class="node-sub" x="105" y="198">internet normal</text>
+          </g>
+
+          <!-- TOR -->
+          <g class="node-tor">
+            <circle class="node-ring" cx="340" cy="88" r="30"/>
+            <circle class="node-circle" cx="340" cy="88" r="24"/>
+            <text class="country" x="340" y="92">DE</text>
+            <text class="node-label" x="340" y="44">Saída Tor</text>
+            <text class="node-sub" x="340" y="61">temporária</text>
+          </g>
+
+          <!-- Tor off x -->
+          <g class="tor-x">
+            <line x1="327" y1="75" x2="353" y2="101" stroke="#d27474" stroke-width="2.5" stroke-linecap="round"/>
+            <line x1="353" y1="75" x2="327" y2="101" stroke="#d27474" stroke-width="2.5" stroke-linecap="round"/>
+          </g>
+
+          <!-- DISCORD -->
+          <g>
+            <circle class="node-ring" cx="575" cy="125" r="30"/>
+            <circle class="node-circle node-discord" cx="575" cy="125" r="24"/>
+            <text class="country" x="575" y="129">DC</text>
+            <text class="node-label" x="575" y="180">Discord</text>
+            <text class="node-sub" x="575" y="198">Go Live</text>
+          </g>
+
+          <!-- Direct badge -->
+          <g class="direct-badge">
+            <rect class="direct-pill" x="286" y="181" width="108" height="26" rx="13"/>
+            <text class="direct-text" x="340" y="198">DIRETO ✓</text>
+          </g>
+        </svg>
+      </div>
     </div>
-    <p class="note">Grátis e de código aberto (<a href="https://github.com/enrell/relayhop">ver no GitHub</a>). <a href="https://github.com/enrell/relayhop/releases">Todas as versões</a>.</p>
-  </header>
+  </section>
 
-  <section>
-    <h2>Como usar</h2>
-    <div class="steps">
-      <div class="card"><span class="n">1</span><br><strong>Feche o Discord</strong> de verdade (botão direito no ícone perto do relógio → Sair).</div>
-      <div class="card"><span class="n">2</span><br>Abra o <strong>RelayHop</strong> e clique em <strong>Abrir Discord</strong>.</div>
-      <div class="card"><span class="n">3</span><br>Quando carregar, clique em <strong>usar conexão direta</strong> e transmita normalmente.</div>
+  <section class="section" id="como-usar">
+    <div class="wrap section-grid">
+      <div>
+        <div class="small-label">como usar</div>
+        <h2>Três passos.</h2>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">01</div>
+          <b>Feche o Discord</b>
+          <span>Encerre de verdade, inclusive da bandeja.</span>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <b>Abra pelo RelayHop</b>
+          <span>Clique em “Abrir Discord” e espere carregar.</span>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <b>Pronto</b>
+          <span>O desvio é desligado e a conexão volta ao normal.</span>
+        </div>
+      </div>
     </div>
   </section>
 
-  <section>
-    <h2>Instalação rápida</h2>
-    <p><strong>Linux</strong> (instala em <code>~/.local/bin</code>, sem sudo):</p>
-    <pre><button onclick="navigator.clipboard.writeText(this.parentElement.innerText.replace('copiar','').trim())">copiar</button><code>curl -fsSL https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.sh | sh</code></pre>
-    <p><strong>Windows</strong> (PowerShell, sem admin):</p>
-    <pre><button onclick="navigator.clipboard.writeText(this.parentElement.innerText.replace('copiar','').trim())">copiar</button><code>irm https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.ps1 | iex</code></pre>
+  <section class="section" id="instalar">
+    <div class="wrap section-grid">
+      <div>
+        <div class="small-label">instalar</div>
+        <h2>Ou pelo terminal.</h2>
+      </div>
+      <div class="install-list">
+        <div class="install-row">
+          <b>Linux</b>
+          <div class="code">
+            <button class="copy" data-copy="curl -fsSL https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.sh | sh">copiar</button>
+            curl -fsSL https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.sh | sh
+          </div>
+        </div>
+        <div class="install-row">
+          <b>Windows</b>
+          <div class="code">
+            <button class="copy" data-copy="irm https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.ps1 | iex">copiar</button>
+            irm https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.ps1 | iex
+          </div>
+        </div>
+      </div>
+    </div>
   </section>
 
-  <section>
-    <h2>Perguntas frequentes</h2>
-    <details class="card"><summary>Por que o Discord bloqueou minha transmissão?</summary>
-      <p>Em agosto de 2026 a ANPD determinou a suspensão do recurso "Go Live" no Brasil, e o Discord desativou transmissões para acessos do país. O RelayHop contorna isso abrindo o Discord com saída em outro país.</p>
-    </details>
-    <details class="card"><summary>É vírus? Vou ser banido?</summary>
-      <p>Não é vírus — o código é todo aberto aqui no GitHub. Ele não modifica o Discord nem injeta nada, só abre o Discord oficial com uma configuração de rede. O Windows pode mostrar um aviso por ser um programa novo sem certificado pago.</p>
-    </details>
-    <details class="card"><summary>Minha internet vai ficar lenta?</summary>
-      <p>Não. Só o Discord usa o desvio, e só durante a abertura. Depois tudo volta à sua conexão normal.</p>
-    </details>
-    <details class="card"><summary>Travou na tela de login. E agora?</summary>
-      <p>Feche o Discord e tente de novo — ele busca outra saída. Se insistir, troque o país em Opções (experimente DE ou NL).</p>
-    </details>
-    <details class="card"><summary>Isso pode parar de funcionar?</summary>
-      <p>Sim: a medida da ANPD exige mecanismos contra burla, então se a verificação endurecer o salto pode deixar de liberar.</p>
-    </details>
+  <section class="section">
+    <div class="wrap section-grid">
+      <div>
+        <div class="small-label">faq</div>
+        <h2>O básico.</h2>
+      </div>
+      <div class="faq">
+        <details>
+          <summary>O Discord é modificado?</summary>
+          <p>Não. O RelayHop apenas inicia o Discord oficial usando uma rota temporária.</p>
+        </details>
+        <details>
+          <summary>Minha internet fica no Tor?</summary>
+          <p>Não. O Tor é usado só durante a abertura do Discord e depois é desligado.</p>
+        </details>
+        <details>
+          <summary>Pode parar de funcionar?</summary>
+          <p>Sim. Se o Discord mudar a forma como aplica a restrição, o RelayHop pode precisar ser atualizado.</p>
+        </details>
+      </div>
+    </div>
   </section>
+</main>
 
-  <footer>
-    RelayHop é um projeto independente, sem afiliação com Discord ou Tor Project. Licença MIT.<br>
-    <a href="https://github.com/enrell/relayhop">Código-fonte</a> · <a href="https://github.com/enrell/relayhop/issues">Reportar problema</a>
-  </footer>
+<footer>
+  <div class="wrap footer-inner">
+    <span>Projeto independente · Discord e Tor Project não são afiliados · MIT</span>
+    <div class="footer-links">
+      <a href="https://github.com/enrell/relayhop">código</a>
+      <a href="https://github.com/enrell/relayhop/releases">releases</a>
+      <a href="https://github.com/enrell/relayhop/issues">issues</a>
+    </div>
+  </div>
+</footer>
 
-</div>
+<script>
+document.querySelectorAll('.copy').forEach(button=>{
+  button.addEventListener('click',async()=>{
+    const old=button.textContent;
+    try{
+      await navigator.clipboard.writeText(button.dataset.copy);
+      button.textContent='copiado';
+    }catch{
+      button.textContent='erro';
+    }
+    setTimeout(()=>button.textContent=old,1200);
+  });
+});
+</script>
+
 </body>
 </html>

@@ -31,7 +31,7 @@ tray-icon = { version = "0.24", default-features = false }
 ksni = { version = "0.3", features = ["blocking"] }
 
 [build-dependencies]
-resvg = { version = "0.48", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png"] }
 ico = "0.5"
 winresource = "0.1"
 

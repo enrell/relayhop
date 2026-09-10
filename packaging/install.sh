@@ -53,10 +53,10 @@ mkdir -p "$BIN_DIR"
 install -m 755 "$TMP/relayhop/relayhop" "$BIN_DIR/relayhop"
 
 APP_DIR="$HOME/.local/share/applications"
-ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
+ICON_DIR="$HOME/.local/share/icons/hicolor/512x512/apps"
 mkdir -p "$APP_DIR" "$ICON_DIR"
-if [ -f "$TMP/relayhop/assets/relayhop.svg" ]; then
-  install -m 644 "$TMP/relayhop/assets/relayhop.svg" "$ICON_DIR/relayhop.svg"
+if [ -f "$TMP/relayhop/assets/icon-512.png" ]; then
+  install -m 644 "$TMP/relayhop/assets/icon-512.png" "$ICON_DIR/relayhop.png"
 fi
 # Desktop entry pointing at the installed binary (tray StartupWMClass kept).
 {

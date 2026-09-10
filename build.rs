@@ -1,32 +1,20 @@
 use std::{env, fs, path::PathBuf};
 
+use image::{GenericImageView, imageops::FilterType};
+
 fn main() {
-    println!("cargo:rerun-if-changed=assets/relayhop.svg");
+    println!("cargo:rerun-if-changed=assets/relayhop.png");
     let output = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    let svg = fs::read("assets/relayhop.svg").expect("read app icon SVG");
-    let tree = resvg::usvg::Tree::from_data(&svg, &resvg::usvg::Options::default())
-        .expect("parse app icon SVG");
+    let source = image::open("assets/relayhop.png").expect("read app icon PNG");
+    assert_eq!(
+        source.dimensions().0,
+        source.dimensions().1,
+        "app icon must be square"
+    );
     let mut ico = ico::IconDir::new(ico::ResourceType::Icon);
     for size in [16, 24, 32, 48, 64, 128, 256] {
-        let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size).unwrap();
-        let scale = size as f32 / tree.size().width();
-        resvg::render(
-            &tree,
-            resvg::tiny_skia::Transform::from_scale(scale, scale),
-            &mut pixmap.as_mut(),
-        );
-        // resvg stores premultiplied pixels; window/tray APIs expect straight RGBA.
-        let mut rgba = pixmap.data().to_vec();
-        let (chunks, _) = rgba.as_chunks_mut::<4>();
-        for pixel in chunks {
-            let alpha = u32::from(pixel[3]);
-            if let Some(alpha) = std::num::NonZero::new(alpha) {
-                for component in &mut pixel[..3] {
-                    *component =
-                        ((u32::from(*component) * 255 + alpha.get() / 2) / alpha).min(255) as u8;
-                }
-            }
-        }
+        let resized = source.resize_exact(size, size, FilterType::Lanczos3);
+        let rgba = resized.into_rgba8().into_raw();
         fs::write(output.join(format!("icon-{size}.rgba")), &rgba).unwrap();
         ico.add_entry(
             ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(size, size, rgba)).unwrap(),
