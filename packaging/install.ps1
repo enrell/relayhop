@@ -27,7 +27,7 @@ if (-not $BaseUrl) {
 if (-not [Environment]::Is64BitOperatingSystem) {
     throw "RelayHop: apenas Windows x64 por enquanto."
 }
-if ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Tls12 -eq 0) {
+if (([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Tls12) -eq 0) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 }
 
