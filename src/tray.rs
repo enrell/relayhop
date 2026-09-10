@@ -65,8 +65,9 @@ pub type Dispatch = Arc<dyn Fn(Action) + Send + Sync>;
 pub fn dispatcher(tx: Sender<Action>, ctx: egui::Context) -> Dispatch {
     Arc::new(move |action| {
         let _ = tx.send(action);
-        // Also enqueue viewport commands here so a hidden window can be restored.
-        if matches!(action, Action::Show | Action::Offline) {
+        // Enqueue the restore here too so a hidden window comes back even
+        // if the event loop is busy; Offline is restored by drain_tray.
+        if matches!(action, Action::Show) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
