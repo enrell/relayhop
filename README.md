@@ -6,6 +6,8 @@
 
 **Libera a transmissão de tela do Discord em 1 clique. Depois ele sai do caminho e sua internet volta ao normal.**
 
+🌐 Site: **https://enrell.github.io/relayhop/**
+
 Em agosto de 2026, a ANPD determinou a suspensão do recurso "Go Live" no Brasil, e o Discord desativou transmissões e compartilhamento de vídeo para quem acessa com IP brasileiro ([entenda o caso](https://www.gov.br/anpd/pt-br/assuntos/noticias/em-medida-preventiva-anpd-determina-que-discord-suspenda-transmissoes-ao-vivo-no-brasil)). O RelayHop abre o seu Discord passando rapidinho por outro país — quando a tela inicial carrega, ele desliga esse desvio sozinho e tudo continua na sua internet de sempre. Sem VPN ligada, sem mensalidade, sem mexer no Discord.
 
 ## Começando em 1 minuto
