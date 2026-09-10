@@ -213,6 +213,19 @@ details p{
   color:var(--muted);
   font-size:13px;
 }
+.trust-sub{
+  margin:26px 0 0;
+  color:var(--muted);
+  font:700 11px/1.3 ui-monospace,SFMono-Regular,Consolas,monospace;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.trust-list{list-style:none;margin:0;padding:0;border-top:1px solid #2d3035}
+.trust-list li{display:flex;gap:14px;padding:13px 0;border-bottom:1px solid var(--line);color:var(--muted);font-size:14px;line-height:1.6}
+.trust-list li strong{color:var(--ink);font-weight:600}
+.trust-mark{flex:none;font-weight:700;color:var(--blue)}
+.trust-dont .trust-mark{color:var(--muted)}
+.audit{margin:14px 0 0;color:var(--muted);font-size:12px;max-width:690px}
 
   /* ——— console de rota ——— */
   .console{ margin-top:3.4rem }
@@ -452,10 +465,10 @@ footer{
                 <rect x="318" y="158" width="18" height="74" rx="3" fill="url(#hatch)"/>
                 <path d="M318 158v74 M336 158v74" stroke="#d27474" stroke-width="1.2" opacity="0.45" fill="none"/>
                 <path d="M318 158h18 M318 232h18" stroke="#d27474" stroke-width="1.2" opacity="0.45" fill="none"/>
-                <text class="sub" x="327" y="301" text-anchor="middle" fill="#6f7683">IP · BR</text>
+                <text class="sub" x="327" y="282" text-anchor="middle" fill="#6f7683">IP · BR</text>
               </g>
-              <text class="cap" x="327" y="287" text-anchor="middle" fill="#d27474" id="capBlock">GO LIVE SUSPENSO</text>
-              <text class="cap" x="327" y="287" text-anchor="middle" fill="#63d6a4" id="capOpen" opacity="0">SESSÃO LIBERADA</text>
+              <text class="cap" x="327" y="266" text-anchor="middle" fill="#d27474" id="capBlock">GO LIVE SUSPENSO</text>
+              <text class="cap" x="327" y="266" text-anchor="middle" fill="#63d6a4" id="capOpen" opacity="0">SESSÃO LIBERADA</text>
 
               <!-- estação: você -->
               <g id="youGrp">
@@ -573,51 +586,19 @@ footer{
       </div>
       <div>
         <div class="trust-sub">o que ele faz</div>
-        <div class="steps trust-do">
-          <div class="step">
-            <div class="step-num">✓</div>
-            <b>Tor temporário</b>
-            <span>sobe o Tor, sorteia uma saída no exterior e lança o <b>Discord oficial</b> por ela.</span>
-          </div>
-          <div class="step">
-            <div class="step-num">✓</div>
-            <b>Desliga sozinho</b>
-            <span>derruba o desvio assim que a sessão está destravada.</span>
-          </div>
-          <div class="step">
-            <div class="step-num">✓</div>
-            <b>Detecta seu Discord</b>
-            <span>reconhece Flatpak, Snap e instalação nativa no Linux, sem configurar nada.</span>
-          </div>
-          <div class="step">
-            <div class="step-num">✓</div>
-            <b>Código aberto</b>
-            <span>publica código, instalador e binários no GitHub, licença MIT.</span>
-          </div>
-        </div>
+        <ul class="trust-list">
+          <li><span class="trust-mark">✓</span><span><strong>Tor temporário</strong> — sobe o Tor, sorteia uma saída no exterior e lança o <strong>Discord oficial</strong> por ela.</span></li>
+          <li><span class="trust-mark">✓</span><span><strong>Desliga sozinho</strong> — derruba o desvio assim que a sessão está destravada.</span></li>
+          <li><span class="trust-mark">✓</span><span><strong>Detecta seu Discord</strong> — reconhece Flatpak, Snap e instalação nativa no Linux, sem configurar nada.</span></li>
+          <li><span class="trust-mark">✓</span><span><strong>Código aberto</strong> — publica código, instalador e binários no GitHub, licença MIT.</span></li>
+        </ul>
         <div class="trust-sub">o que ele nunca faz</div>
-        <div class="steps trust-dont">
-          <div class="step">
-            <div class="step-num">✕</div>
-            <b>Não toca no app</b>
-            <span>não modifica, injeta nem “crackeia” o Discord — só argumentos de rede no lançamento.</span>
-          </div>
-          <div class="step">
-            <div class="step-num">✕</div>
-            <b>Sem proxy global</b>
-            <span>o resto do seu PC <b>nunca passa pelo Tor</b>.</span>
-          </div>
-          <div class="step">
-            <div class="step-num">✕</div>
-            <b>Sem conta</b>
-            <span>não pede conta, e-mail nem cartão — não existe mensalidade para cobrar.</span>
-          </div>
-          <div class="step">
-            <div class="step-num">✕</div>
-            <b>Fora dos jogos</b>
-            <span>não fica entre seus jogos e o servidor: depois do salto, ele só observa.</span>
-          </div>
-        </div>
+        <ul class="trust-list trust-dont">
+          <li><span class="trust-mark">✕</span><span><strong>Não toca no app</strong> — não modifica, injeta nem “crackeia” o Discord, só argumentos de rede no lançamento.</span></li>
+          <li><span class="trust-mark">✕</span><span><strong>Sem proxy global</strong> — o resto do seu PC <strong>nunca passa pelo Tor</strong>.</span></li>
+          <li><span class="trust-mark">✕</span><span><strong>Sem conta</strong> — não pede conta, e-mail nem cartão, não existe mensalidade para cobrar.</span></li>
+          <li><span class="trust-mark">✕</span><span><strong>Fora dos jogos</strong> — não fica entre seus jogos e o servidor: depois do salto, ele só observa.</span></li>
+        </ul>
         <p class="audit">lê antes de rodar curl | sh? os scripts são curtos — abra o <a href="https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.sh">install.sh</a> / <a href="https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.ps1">install.ps1</a> e confira.</p>
       </div>
     </div>
