@@ -220,12 +220,16 @@ details p{
   text-transform:uppercase;
   letter-spacing:.08em;
 }
-.trust-list{list-style:none;margin:0;padding:0;border-top:1px solid #2d3035}
-.trust-list li{display:flex;gap:14px;padding:13px 0;border-bottom:1px solid var(--line);color:var(--muted);font-size:14px;line-height:1.6}
+.ledger{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:0 52px;margin-top:8px}
+.ledger::before{content:"";position:absolute;left:50%;top:6px;bottom:0;width:1px;background:var(--line)}
+.ledger .trust-sub{margin-top:0}
+.trust-list{list-style:none;margin:6px 0 0;padding:0}
+.trust-list li{display:flex;gap:14px;padding:16px 2px;color:var(--muted);font-size:15.5px;line-height:1.65}
+.trust-list li+li{border-top:1px solid var(--line)}
 .trust-list li strong{color:var(--ink);font-weight:600}
-.trust-mark{flex:none;font-weight:700;color:var(--blue)}
-.trust-dont .trust-mark{color:var(--muted)}
-.audit{margin:14px 0 0;color:var(--muted);font-size:12px;max-width:690px}
+.trust-mark{flex:none;width:26px;height:26px;line-height:24px;text-align:center;border:1px solid var(--blue);border-radius:50%;color:var(--blue);font-size:13px;font-weight:700}
+.trust-dont .trust-mark{border-color:var(--line2);color:var(--muted)}
+.audit{margin:22px 0 0;color:var(--muted);font-size:12px;max-width:690px}
 
   /* ——— console de rota ——— */
   .console{ margin-top:3.4rem }
@@ -360,6 +364,8 @@ footer{
 
 @media(max-width:760px){
   .section-grid{grid-template-columns:1fr;gap:26px}
+  .ledger{grid-template-columns:1fr;gap:30px}
+  .ledger::before{display:none}
   .step{grid-template-columns:30px 1fr}
   .step span{grid-column:2}
   .install-row{grid-template-columns:1fr}
@@ -579,28 +585,35 @@ footer{
   </section>
 
   <section class="section" id="confianca">
-    <div class="wrap section-grid">
-      <div>
-        <div class="small-label">confiança</div>
-        <h2>Por que dá pra confiar.</h2>
+    <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <div class="small-label">confiança</div>
+          <h2>Por que dá pra confiar.</h2>
+        </div>
+        <p class="sec-note">Nada de binário fechado prometendo milagre. O que dá para prometer está no repositório.</p>
       </div>
-      <div>
-        <div class="trust-sub">o que ele faz</div>
-        <ul class="trust-list">
-          <li><span class="trust-mark">✓</span><span><strong>Tor temporário</strong> — sobe o Tor, sorteia uma saída no exterior e lança o <strong>Discord oficial</strong> por ela.</span></li>
-          <li><span class="trust-mark">✓</span><span><strong>Desliga sozinho</strong> — derruba o desvio assim que a sessão está destravada.</span></li>
-          <li><span class="trust-mark">✓</span><span><strong>Detecta seu Discord</strong> — reconhece Flatpak, Snap e instalação nativa no Linux, sem configurar nada.</span></li>
-          <li><span class="trust-mark">✓</span><span><strong>Código aberto</strong> — publica código, instalador e binários no GitHub, licença MIT.</span></li>
-        </ul>
-        <div class="trust-sub">o que ele nunca faz</div>
-        <ul class="trust-list trust-dont">
-          <li><span class="trust-mark">✕</span><span><strong>Não toca no app</strong> — não modifica, injeta nem “crackeia” o Discord, só argumentos de rede no lançamento.</span></li>
-          <li><span class="trust-mark">✕</span><span><strong>Sem proxy global</strong> — o resto do seu PC <strong>nunca passa pelo Tor</strong>.</span></li>
-          <li><span class="trust-mark">✕</span><span><strong>Sem conta</strong> — não pede conta, e-mail nem cartão, não existe mensalidade para cobrar.</span></li>
-          <li><span class="trust-mark">✕</span><span><strong>Fora dos jogos</strong> — não fica entre seus jogos e o servidor: depois do salto, ele só observa.</span></li>
-        </ul>
-        <p class="audit">lê antes de rodar curl | sh? os scripts são curtos — abra o <a href="https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.sh">install.sh</a> / <a href="https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.ps1">install.ps1</a> e confira.</p>
+      <div class="ledger">
+        <div>
+          <div class="trust-sub">o que ele faz</div>
+          <ul class="trust-list">
+            <li><span class="trust-mark">✓</span><span>Sobe o Tor, sorteia uma saída no exterior e lança o <strong>Discord oficial</strong> por ela.</span></li>
+            <li><span class="trust-mark">✓</span><span>Derruba o desvio <strong>sozinho</strong>, assim que a sessão está destravada.</span></li>
+            <li><span class="trust-mark">✓</span><span>Reconhece Flatpak, Snap e instalação nativa no Linux, sem configurar nada.</span></li>
+            <li><span class="trust-mark">✓</span><span>Publica código, instalador e binários no GitHub, <strong>licença MIT</strong>.</span></li>
+          </ul>
+        </div>
+        <div class="neg">
+          <div class="trust-sub">o que ele nunca faz</div>
+          <ul class="trust-list trust-dont">
+            <li><span class="trust-mark">✕</span><span>Não modifica, injeta nem “crackeia” o Discord — só <strong>argumentos de rede</strong> no lançamento.</span></li>
+            <li><span class="trust-mark">✕</span><span>Não cria proxy de sistema: o resto do seu PC <strong>nunca passa pelo Tor</strong>.</span></li>
+            <li><span class="trust-mark">✕</span><span>Não pede conta, e-mail nem cartão — não existe mensalidade para cobrar.</span></li>
+            <li><span class="trust-mark">✕</span><span>Não fica entre seus jogos e o servidor: depois do salto, ele só observa.</span></li>
+          </ul>
+        </div>
       </div>
+      <p class="audit">lê antes de rodar curl | sh? os scripts são curtos — abra o <a href="https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.sh">install.sh</a> / <a href="https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.ps1">install.ps1</a> e confira.</p>
     </div>
   </section>
 
