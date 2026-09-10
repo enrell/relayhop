@@ -4,6 +4,10 @@
 
 Launcher independente, escrito em Rust, para **Windows e Linux**. Usa [Arti](https://arti.torproject.org/), a implementação de Tor em Rust, incluída no próprio executável. Sem cadastro em provedor, VPS, instalação separada de Tor ou configuração de VPN.
 
+## Baixar
+
+Binários prontos para Linux e Windows em cada release, na página [**Releases**](https://github.com/enrell/relayhop/releases). Verifique o `sha256` publicado junto aos arquivos.
+
 ## Usar
 
 1. Saia do Discord pelo ícone da bandeja. Uma instância existente pode ignorar flags de uma segunda abertura.

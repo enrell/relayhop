@@ -1,18 +1,20 @@
-name: Build packages
+name: Release binaries
+
 on:
   workflow_dispatch:
   push:
     tags: ['v*']
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   package:
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
+          - os: ubuntu-22.04
             platform: linux-x64
           - os: windows-latest
             platform: windows-x64
@@ -40,7 +42,7 @@ jobs:
         run: |
           New-Item -ItemType Directory dist/relayhop -Force
           Copy-Item target/release/relayhop.exe, README.md dist/relayhop/
-          Copy-Item docs dist/relayhop/ -Recurse
+          Copy-Item assets, docs dist/relayhop/ -Recurse
           Compress-Archive dist/relayhop/* dist/relayhop-windows-x64.zip
           $hash = (Get-FileHash dist/relayhop-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
           "$hash  relayhop-windows-x64.zip" | Set-Content dist/relayhop-windows-x64.sha256
@@ -51,3 +53,12 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/*.sha256
+          if-no-files-found: error
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+          generate_release_notes: true
