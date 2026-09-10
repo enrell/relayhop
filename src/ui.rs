@@ -181,6 +181,7 @@ impl App {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 }
                 #[cfg(target_os = "linux")]
+                #[cfg(target_os = "linux")]
                 Action::Online => self.tray_available = true,
             }
         }
