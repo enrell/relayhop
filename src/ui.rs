@@ -173,12 +173,14 @@ impl App {
                     self.controls.stop.cancel();
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
+                #[cfg(target_os = "linux")]
                 Action::Offline => {
                     // No host claims the tray icon: keep the window around.
                     self.tray_available = false;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 }
+                #[cfg(target_os = "linux")]
                 Action::Online => self.tray_available = true,
             }
         }

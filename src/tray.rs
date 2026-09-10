@@ -9,7 +9,11 @@ pub enum Action {
     Start,
     Direct,
     Quit,
+    /// SNI watcher went away (ksni/Linux only): keep the window visible.
+    #[cfg(target_os = "linux")]
     Offline,
+    /// SNI watcher is back (ksni/Linux only).
+    #[cfg(target_os = "linux")]
     Online,
 }
 

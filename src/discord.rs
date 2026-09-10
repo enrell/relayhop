@@ -12,9 +12,11 @@ use tokio::process::{Child, Command};
 /// Display variables saved before the GUI backend selection strips them
 /// (see main::prefer_x11_backend). The Discord child gets the exact
 /// environment the user validated, regardless of which backend our own
-/// window uses.
+/// window uses. Linux-only: only Linux strips these variables.
+#[cfg(target_os = "linux")]
 static PRESERVED_DISPLAY_ENV: OnceLock<Vec<(String, String)>> = OnceLock::new();
 
+#[cfg(target_os = "linux")]
 pub fn preserve_display_env(keys: &[&str]) {
     let _ = PRESERVED_DISPLAY_ENV.set(
         keys.iter()
@@ -65,6 +67,7 @@ impl Installation {
             .stderr(Stdio::null());
         // Restore the display environment validated by the user; our own
         // process may have stripped it for the winit backend selection.
+        #[cfg(target_os = "linux")]
         if let Some(vars) = PRESERVED_DISPLAY_ENV.get() {
             for (key, value) in vars {
                 command.env(key, value);
