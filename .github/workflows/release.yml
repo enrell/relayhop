@@ -46,12 +46,17 @@ jobs:
           Compress-Archive dist/relayhop/* dist/relayhop-windows-x64.zip
           $hash = (Get-FileHash dist/relayhop-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
           "$hash  relayhop-windows-x64.zip" | Set-Content dist/relayhop-windows-x64.sha256
+          # Raw binary for direct download + the PowerShell installer.
+          Copy-Item target/release/relayhop.exe dist/relayhop.exe
+          $exeHash = (Get-FileHash dist/relayhop.exe -Algorithm SHA256).Hash.ToLower()
+          "$exeHash  relayhop.exe" | Set-Content dist/relayhop.exe.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: relayhop-${{ matrix.platform }}
           path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.exe
             dist/*.sha256
           if-no-files-found: error
       - name: Publish to GitHub Release
@@ -60,5 +65,6 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.exe
             dist/*.sha256
           generate_release_notes: true

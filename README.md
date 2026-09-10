@@ -6,7 +6,23 @@ Launcher independente, escrito em Rust, para **Windows e Linux**. Usa [Arti](htt
 
 ## Baixar
 
-Binários prontos para Linux e Windows em cada release, na página [**Releases**](https://github.com/enrell/relayhop/releases). Verifique o `sha256` publicado junto aos arquivos.
+### Windows
+
+Baixe o `relayhop.exe` direto na página [**Releases**](https://github.com/enrell/relayhop/releases) (também há `.zip`), ou instale via PowerShell (sem admin):
+
+```powershell
+irm https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.ps1 | iex
+```
+
+Isso instala em `%LOCALAPPDATA%\RelayHop`, verifica o SHA-256 e cria o atalho no Menu Iniciar. O binário não é assinado, então o SmartScreen pode pedir confirmação na primeira execução. Versão específica: `$env:RELAYHOP_VERSION = "v0.2.0"; irm ... | iex`.
+
+### Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/enrell/relayhop/main/packaging/install.sh | sh
+```
+
+Instala em `~/.local/bin` (sem sudo), com verificação SHA-256, entrada no menu e ícone. Versão específica: `curl -fsSL ... | sh -s -- v0.2.0`. Também há o `.tar.gz` na página [**Releases**](https://github.com/enrell/relayhop/releases).
 
 ## Usar
 
