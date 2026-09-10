@@ -1,0 +1,26 @@
+name: Windows check
+
+# Windows runners are ~2x slower than Linux for the same Rust build and
+# would gate every push on the slowest leg, so Windows coverage runs
+# nightly, on demand, and on every release build (see release.yml) —
+# not on every push.
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked

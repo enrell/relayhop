@@ -8,11 +8,10 @@ permissions:
 
 jobs:
   check:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, windows-latest]
-    runs-on: ${{ matrix.os }}
+    # Linux only: the Windows leg takes ~2x longer on github-hosted
+    # runners and rarely breaks (see windows.yml, which covers Windows
+    # nightly, on demand, and on release builds).
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -20,7 +19,6 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Linux build dependencies
-        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y pkg-config libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
