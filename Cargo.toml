@@ -1,6 +1,6 @@
 [package]
 name = "relayhop"
-version = "0.2.2"
+version = "0.3.0"
 license = "MIT"
 edition = "2024"
 rust-version = "1.91"
@@ -24,6 +24,11 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "ApplicationModel",
+    "ApplicationModel_Activation",
+    "Win32_System_WinRT",
+] }
 windows-sys = { version = "0.61", features = [
     "Win32_System_Console",
     "Win32_UI_WindowsAndMessaging",

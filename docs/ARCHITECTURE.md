@@ -5,6 +5,8 @@
 | Módulo | Responsabilidade |
 |---|---|
 | `main.rs` | CLI, runtime e modo de teste de conectividade |
+| `activation.rs` | Instância única da GUI e sinalização de novas aberturas |
+| `startup.rs` | Detecção do pacote MSIX e da ativação pelo Windows |
 | `ui.rs` | Interface egui, progresso e controles de sessão |
 | `session.rs` | Lock, bootstrap, teste, abertura, temporizador, monitor e limpeza |
 | `tor.rs` | Worker Arti, restrição GeoIP, controle por pipe e teste HTTPS |
@@ -34,6 +36,8 @@ O worker herda apenas stdin/stdout necessários ao protocolo de controle. No Win
 O projeto aplica uma cópia local corrigida de `saturating-time` 0.4.0. A versão publicada pode entrar em loop ao procurar os limites de `SystemTime` no Windows: passos menores que o `FILETIME` de 100 ns não alteram o valor, embora `checked_add`/`checked_sub` retornem sucesso. A correção trata ausência de progresso como limite e inclui um teste com relógio de granularidade reduzida. Sem ela, o Arti recebe o consenso, fixa um núcleo e permanece em 15% indefinidamente.
 
 O encaminhador principal existe durante toda a sessão Discord. Fechar sua janela a recolhe para a bandeja; parar o encaminhador explicitamente interrompe as conexões que dependem dele. No Windows, o item `Sair do RelayHop` também publica uma mensagem `WM_CLOSE` para a janela principal: isso permite encerrar mesmo quando o viewport está invisível e não pode processar uma nova pintura do egui. O monitor de processos tem tolerância de três amostras ausentes. Não tenta terminar processos Discord automaticamente.
+
+O pacote MSIX registra um `StartupTask` por usuário. Essa ativação cria a interface invisível e apenas mantém o agente de bandeja aguardando; não inicia Tor nem Discord. Uma abertura normal do RelayHop sinaliza a instância existente por um arquivo de ativação local, mostra o popup e começa a sessão. Quando o Discord encerra, a instância volta ao estado ocioso. Não há serviço em `services.msc`, elevação, sessão 0 ou processo global. A edição portátil não registra inicialização automática e mantém o botão de início manual.
 
 ### Política de rede
 

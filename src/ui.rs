@@ -11,7 +11,9 @@ use anyhow::Result;
 use eframe::egui::{self, Color32, RichText, Vec2};
 
 use crate::{
+    activation::{self, Claim},
     session::{self, Controls, Event, Options},
+    startup,
     tray::{self, Action, State as TrayState, Tray},
 };
 
@@ -20,14 +22,20 @@ const TEAL: Color32 = Color32::from_rgb(117, 220, 202);
 const DANGER: Color32 = Color32::from_rgb(255, 150, 145);
 const MUTED: Color32 = Color32::from_rgb(148, 163, 196);
 
-pub fn run(options: Options) -> Result<()> {
+pub fn run(options: Options, background: bool) -> Result<()> {
+    let instance = match activation::claim_or_signal(!background)? {
+        Claim::Primary(instance) => instance,
+        Claim::Secondary => return Ok(()),
+    };
+    let packaged = startup::is_packaged();
     let native = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_app_id("relayhop")
             .with_title("RelayHop")
             .with_icon(crate::icon::window())
-            .with_inner_size([560.0, 560.0])
-            .with_min_inner_size([500.0, 520.0]),
+            .with_inner_size([520.0, 440.0])
+            .with_min_inner_size([460.0, 400.0])
+            .with_visible(!background),
         ..Default::default()
     };
     eframe::run_native(
@@ -35,7 +43,13 @@ pub fn run(options: Options) -> Result<()> {
         native,
         Box::new(move |context| {
             context.egui_ctx.set_visuals(dark_visuals());
-            Ok(Box::new(App::new(options)))
+            Ok(Box::new(App::new(
+                options,
+                context.egui_ctx.clone(),
+                instance,
+                packaged && !background,
+                background,
+            )))
         }),
     )
     .map_err(|error| anyhow::anyhow!("interface gráfica: {error}"))
@@ -69,22 +83,36 @@ struct App {
     tray_available: bool,
     quit_requested: Arc<AtomicBool>,
     stopping: bool,
+    start_on_first_frame: bool,
+    hide_on_first_frame: bool,
+    _instance: activation::Primary,
 }
 
 impl App {
-    fn new(options: Options) -> Self {
+    fn new(
+        options: Options,
+        context: egui::Context,
+        instance: activation::Primary,
+        start_on_first_frame: bool,
+        hide_on_first_frame: bool,
+    ) -> Self {
         let path = options
             .discord
             .as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or_default();
         let (tray_tx, tray_rx) = mpsc::channel();
+        instance.listen(tray_tx.clone(), context);
         Self {
             options,
             path,
             events: None,
             controls: Controls::default(),
-            status: "Um salto pelo Tor na abertura. Sua conexão normal depois.".into(),
+            status: if start_on_first_frame {
+                "Preparando para abrir o Discord…".into()
+            } else {
+                "Aguardando. Abra o Discord pelo RelayHop quando quiser começar.".into()
+            },
             active: false,
             warming: false,
             direct: false,
@@ -98,6 +126,9 @@ impl App {
             tray_available: true,
             quit_requested: Arc::new(AtomicBool::new(false)),
             stopping: false,
+            start_on_first_frame,
+            hide_on_first_frame,
+            _instance: instance,
         }
     }
 
@@ -126,7 +157,7 @@ impl App {
         });
     }
 
-    fn receive(&mut self) {
+    fn receive(&mut self, context: &egui::Context) {
         if let Some(events) = &self.events {
             for event in events.try_iter() {
                 match event {
@@ -150,20 +181,31 @@ impl App {
                             self.warming = false;
                             self.status =
                                 "Conexão direta ativa. O cliente Tor foi encerrado.".into();
+                            #[cfg(windows)]
+                            if self.tray_available {
+                                context.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                                context.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                            }
                         }
                     }
                     Event::Finished => {
                         self.active = false;
                         self.warming = false;
+                        self.direct = false;
                         self.stopping = false;
-                        self.status = "Sessão encerrada.".into();
+                        self.error = false;
+                        self.status = "Discord encerrado. Aguardando uma nova abertura.".into();
                     }
                     Event::Error(error) => {
                         self.active = false;
                         self.warming = false;
+                        self.direct = false;
                         self.stopping = false;
                         self.error = true;
                         self.status = error;
+                        context.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                        context.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                        context.send_viewport_cmd(egui::ViewportCommand::Focus);
                     }
                 }
             }
@@ -179,10 +221,10 @@ impl App {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 }
                 Action::Start => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                     if !self.active {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                         self.start(ctx.clone());
                     }
                 }
@@ -224,6 +266,8 @@ impl App {
             Err(error) => {
                 tracing::debug!(%error, "tray indisponível; seguindo sem bandeja");
                 self.tray_available = false;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             }
         }
     }
@@ -261,9 +305,22 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
-        self.receive();
+        self.receive(ctx);
         self.ensure_tray(ctx);
         self.drain_tray(ctx);
+        if self.hide_on_first_frame {
+            self.hide_on_first_frame = false;
+            if self.tray_available {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            }
+        }
+        if self.start_on_first_frame {
+            self.start_on_first_frame = false;
+            if !self.active {
+                self.start(ctx.clone());
+            }
+        }
         self.sync_tray();
         if self.brand.is_none() {
             self.brand = Some(crate::icon::texture(ctx));

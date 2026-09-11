@@ -88,7 +88,9 @@ pub fn dispatcher(
         // viewport may not run another frame for a plain repaint request, so
         // waiting for `drain_tray` made Quit appear to do nothing.
         match action {
-            Action::Show => {
+            Action::Show | Action::Start => {
+                #[cfg(windows)]
+                platform::show_window();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -307,6 +309,28 @@ mod platform {
         }
     }
 
+    pub(super) fn show_window() {
+        let mut search = CloseSearch {
+            process_id: std::process::id(),
+            relayhop_window: ptr::null_mut(),
+            candidates: Vec::new(),
+        };
+        // SAFETY: EnumWindows invokes the callback synchronously while the
+        // stack-owned search remains valid. The selected handle belongs to
+        // this process and has the exact RelayHop window title.
+        unsafe {
+            EnumWindows(
+                Some(find_relayhop_window),
+                &mut search as *mut CloseSearch as LPARAM,
+            );
+            if !search.relayhop_window.is_null() {
+                ShowWindow(search.relayhop_window, SW_SHOW);
+                ShowWindow(search.relayhop_window, SW_RESTORE);
+                SetForegroundWindow(search.relayhop_window);
+            }
+        }
+    }
+
     pub struct Tray {
         icon: TrayIcon,
         status: MenuItem,
@@ -407,6 +431,11 @@ mod platform {
 }
 
 pub use platform::Tray;
+
+#[cfg(windows)]
+pub fn show_main_window() {
+    platform::show_window();
+}
 
 #[cfg(test)]
 mod tests {

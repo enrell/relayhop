@@ -2,6 +2,13 @@
 
 Os testes automatizados não abrem Discord e não acessam Tor. Para validar a integração, execute deliberadamente os passos abaixo numa conta/dispositivo de teste.
 
+## Agente do Windows — 2026-09-10
+
+- `cargo test --locked`: 13 testes passaram, incluindo exclusividade, sinalização da segunda instância no Windows e a corrida com a ativação oculta no login.
+- A build local iniciada com `--background` manteve a janela `visible=False` e `minimized=True`.
+- Uma segunda abertura encerrou em até cinco segundos e restaurou a janela da instância primária para `visible=True` e `minimized=False`.
+- O MakeAppx aceitou o manifesto com `desktop:StartupTask` e criou `RelayHop_0.3.0.0_x64.msix`. O teste local sem assinatura valida a ativação equivalente por `--background`; a ativação real pelo pacote deve ser reconfirmada depois da instalação assinada pela Store.
+
 ## Verificações — 2026-09-10
 
 - **Streaming validado pelo usuário** em sessão real no Linux com o binário de release: a liberação de transmissão persistiu após a troca para conexão direta. (Versão/empacotamento do Discord usados no teste ainda a registrar.)

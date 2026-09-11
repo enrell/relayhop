@@ -1,9 +1,11 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod activation;
 mod discord;
 mod icon;
 mod proxy;
 mod session;
+mod startup;
 mod tor;
 mod tray;
 mod ui;
@@ -22,6 +24,9 @@ struct Cli {
     /// Iniciar sem interface gráfica; mantenha o terminal aberto.
     #[arg(long)]
     headless: bool,
+    /// Iniciar oculto na bandeja, aguardando uma ativação.
+    #[arg(long, hide = true)]
+    background: bool,
     /// País de saída Tor (GeoIP); não pode ser BR.
     #[arg(long, default_value = "US", value_parser = tor::country)]
     country: String,
@@ -126,6 +131,7 @@ fn main() -> Result<()> {
         Some(Internal::Check) => return runtime()?.block_on(connectivity_check(&cli.country)),
         None => {}
     }
+    let background = cli.background || startup::launched_by_startup_task();
     let options = session::Options {
         country: cli.country,
         warmup_secs: cli.warmup_secs,
@@ -135,7 +141,7 @@ fn main() -> Result<()> {
     if cli.headless {
         headless(options)
     } else {
-        ui::run(options)
+        ui::run(options, background)
     }
 }
 

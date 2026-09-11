@@ -13,7 +13,7 @@ Em agosto de 2026, a ANPD determinou a suspensão do recurso "Go Live" no Brasil
 
 ## Começando em 1 minuto
 
-**No Windows:** use a versão instalada pela Microsoft Store quando ela estiver disponível ou baixe o [`relayhop.exe` portátil](https://github.com/enrell/relayhop/releases/latest/download/relayhop.exe). O executável portátil não exige instalação; enquanto não tiver reputação suficiente no SmartScreen, o Windows pode pedir confirmação na primeira execução.
+**No Windows:** use a versão instalada pela Microsoft Store quando ela estiver disponível ou baixe o [`relayhop.exe` portátil](https://github.com/enrell/relayhop/releases/latest/download/relayhop.exe). A edição da Store inicia um agente oculto na bandeja junto com o Windows; abrir o RelayHop pelo Menu Iniciar mostra o andamento e inicia o Discord. Isso pode ser desativado em **Configurações → Aplicativos → Inicialização**. O executável portátil não inicia com o Windows e não exige instalação; enquanto não tiver reputação suficiente no SmartScreen, o Windows pode pedir confirmação na primeira execução.
 
 **No Linux:** cole isto no terminal:
 
@@ -26,7 +26,7 @@ Depois é só abrir o RelayHop pelo menu de aplicativos.
 ## Como usar (toda vez)
 
 1. **Feche o Discord** de verdade (clique com botão direito no ícone dele perto do relógio → Sair). Se ele já estiver aberto, não funciona.
-2. Abra o **RelayHop** e clique em **Abrir Discord**.
+2. Abra o **RelayHop**. Na edição da Store, o processo começa imediatamente; na portátil e no Linux, clique em **Abrir Discord**.
 3. Espere o Discord abrir. Quando ele terminar de carregar, clique em **"Discord carregou — usar conexão direta"** (ou espere 1 minuto que ele troca sozinho).
 4. Pronto: use a transmissão de tela normalmente. Pode minimizar o RelayHop — **não feche**, ele precisa ficar na bandeja enquanto você usa.
 
@@ -59,7 +59,7 @@ Pronto → Tor (conectando) → Discord (aguardando carregar) → Direta (Tor de
 Funciona instalado normal, via Flatpak e via Snap — ele detecta sozinho. Se não achar, dá para apontar o caminho em Opções.
 
 **Posso fechar a janela do RelayHop?**
-Fechar minimiza para a bandeja (perto do relógio), não encerra. Para sair de verdade, use Sair no menu da bandeja. Se sair do Discord, o RelayHop encerra sozinho.
+Fechar minimiza para a bandeja (perto do relógio), não encerra. Para sair de verdade, use Sair no menu da bandeja. Na edição da Store, ao sair do Discord o agente volta a aguardar a próxima abertura do RelayHop.
 
 **Meus dados estão seguros?**
 O RelayHop não vê sua senha, suas mensagens nem sua tela — ele só encaminha a conexão, sem abrir o conteúdo. Nada do que você faz é registrado ou enviado para lugar nenhum. Detalhes técnicos abaixo.
@@ -75,7 +75,7 @@ O gerador já contém a identidade oficial reservada no Partner Center:
 .\packaging\build-msix.ps1
 ```
 
-O pacote é criado em `dist/`. Cada tag também gera o MSIX como artefato privado do workflow para envio ao Partner Center; apenas o `.exe` portátil é anexado à release pública. A Microsoft assina o MSIX depois da certificação.
+O pacote é criado em `dist/`. Cada tag também gera o MSIX como artefato privado do workflow para envio ao Partner Center; apenas o `.exe` portátil é anexado à release pública. A Microsoft assina o MSIX depois da certificação e distribui suas atualizações. O manifesto registra um `StartupTask` por usuário: ele inicia oculto, sem serviço do Windows e sem privilégios administrativos.
 </details>
 
 <details>
