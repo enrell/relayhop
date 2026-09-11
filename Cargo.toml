@@ -1,6 +1,6 @@
 [package]
 name = "relayhop"
-version = "0.2.1"
+version = "0.2.2"
 license = "MIT"
 edition = "2024"
 rust-version = "1.91"
@@ -24,7 +24,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
+windows-sys = { version = "0.61", features = [
+    "Win32_System_Console",
+    "Win32_UI_WindowsAndMessaging",
+] }
 tray-icon = { version = "0.24", default-features = false }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -37,6 +40,11 @@ winresource = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
+
+[patch.crates-io]
+# 0.4.0 loops forever while finding SystemTime limits on Windows, whose
+# FILETIME clock rounds sub-100 ns steps without reporting an error.
+saturating-time = { path = "vendor/saturating-time" }
 
 [profile.release]
 lto = "thin"

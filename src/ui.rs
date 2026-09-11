@@ -1,5 +1,9 @@
 use std::{
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, Sender},
+    },
     time::{Duration, Instant},
 };
 
@@ -63,7 +67,8 @@ struct App {
     tray_rx: Receiver<Action>,
     tray_state: Option<TrayState>,
     tray_available: bool,
-    quit_requested: bool,
+    quit_requested: Arc<AtomicBool>,
+    stopping: bool,
 }
 
 impl App {
@@ -91,7 +96,8 @@ impl App {
             tray_rx,
             tray_state: None,
             tray_available: true,
-            quit_requested: false,
+            quit_requested: Arc::new(AtomicBool::new(false)),
+            stopping: false,
         }
     }
 
@@ -101,6 +107,7 @@ impl App {
         self.warming = false;
         self.direct = false;
         self.error = false;
+        self.stopping = false;
         self.deadline = None;
         self.options.discord = (!self.path.trim().is_empty()).then(|| self.path.trim().into());
         let options = self.options.clone();
@@ -123,26 +130,38 @@ impl App {
         if let Some(events) = &self.events {
             for event in events.try_iter() {
                 match event {
-                    Event::Status(status) => self.status = status,
+                    Event::Status(status) => {
+                        if !self.stopping {
+                            self.status = status;
+                        }
+                    }
                     Event::Warming(deadline) => {
-                        self.warming = true;
-                        self.deadline = deadline;
-                        self.status =
-                            "Discord conectado pelo Tor. Aguarde a tela inicial carregar.".into();
+                        if !self.stopping {
+                            self.warming = true;
+                            self.deadline = deadline;
+                            self.status =
+                                "Discord conectado pelo Tor. Aguarde a tela inicial carregar."
+                                    .into();
+                        }
                     }
                     Event::Direct => {
-                        self.direct = true;
-                        self.warming = false;
-                        self.status = "Conexão direta ativa. O cliente Tor foi encerrado.".into();
+                        if !self.stopping {
+                            self.direct = true;
+                            self.warming = false;
+                            self.status =
+                                "Conexão direta ativa. O cliente Tor foi encerrado.".into();
+                        }
                     }
                     Event::Finished => {
                         self.active = false;
                         self.warming = false;
+                        self.stopping = false;
                         self.status = "Sessão encerrada.".into();
                     }
                     Event::Error(error) => {
                         self.active = false;
                         self.warming = false;
+                        self.stopping = false;
                         self.error = true;
                         self.status = error;
                     }
@@ -169,7 +188,7 @@ impl App {
                 }
                 Action::Direct => self.controls.direct.cancel(),
                 Action::Quit => {
-                    self.quit_requested = true;
+                    self.quit_requested.store(true, Ordering::Release);
                     self.controls.stop.cancel();
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -190,7 +209,12 @@ impl App {
         if self.tray.is_some() || !matches!(std::env::consts::OS, "linux" | "windows") {
             return;
         }
-        let dispatch = tray::dispatcher(self.tray_tx.clone(), ctx.clone());
+        let dispatch = tray::dispatcher(
+            self.tray_tx.clone(),
+            ctx.clone(),
+            self.quit_requested.clone(),
+            self.controls.stop.clone(),
+        );
         match Tray::new(tray::state_for(false, false, false, false), dispatch) {
             Ok(created) => {
                 // A host may still report the icon as closed (no watcher/host).
@@ -225,6 +249,14 @@ impl App {
             0
         }
     }
+
+    fn request_stop(&mut self) {
+        if !self.stopping {
+            self.stopping = true;
+            self.status = "Encerrando o cliente Tor e o encaminhador local…".into();
+            self.controls.stop.cancel();
+        }
+    }
 }
 
 impl eframe::App for App {
@@ -239,8 +271,15 @@ impl eframe::App for App {
         if self.active {
             ctx.request_repaint_after(Duration::from_millis(250));
         }
+        if self.quit_requested.load(Ordering::Acquire) {
+            // Keep issuing the close request until the native event loop has
+            // consumed it. This matters when the viewport was hidden in the
+            // tray and therefore had no scheduled frame at click time.
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         if ctx.input(|input| input.viewport().close_requested()) {
-            if self.quit_requested {
+            if self.quit_requested.load(Ordering::Acquire) {
                 // Allow the window (and event loop) to close.
             } else if self.tray_available {
                 // The forwarder is still needed: keep the process alive and
@@ -390,7 +429,14 @@ impl App {
         ui.collapsing("Opções", |ui| self.draw_options(ui));
     }
 
-    fn draw_active(&self, ui: &mut egui::Ui) {
+    fn draw_active(&mut self, ui: &mut egui::Ui) {
+        if self.stopping {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label("Encerrando…");
+            });
+            return;
+        }
         if self.warming {
             if ui
                 .add_sized(
@@ -429,7 +475,7 @@ impl App {
                         .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                 }
                 if ui.button("Cancelar").clicked() {
-                    self.controls.stop.cancel();
+                    self.request_stop();
                 }
             });
             ui.collapsing("Encerrar manualmente", |ui| {
@@ -437,11 +483,11 @@ impl App {
                     "Isso interrompe as conexões encaminhadas do Discord. Para continuar sem RelayHop, reabra o Discord normalmente.",
                 );
                 if ui.button("Encerrar RelayHop").clicked() {
-                    self.controls.stop.cancel();
+                    self.request_stop();
                 }
             });
         } else if ui.button("Cancelar").clicked() {
-            self.controls.stop.cancel();
+            self.request_stop();
         }
     }
 

@@ -120,7 +120,9 @@ fn main() -> Result<()> {
         .init();
     let cli = Cli::parse();
     match cli.command {
-        Some(Internal::TorWorker { country }) => return runtime()?.block_on(tor::worker(&country)),
+        Some(Internal::TorWorker { country }) => {
+            return runtime()?.block_on(tor::worker_entry(&country));
+        }
         Some(Internal::Check) => return runtime()?.block_on(connectivity_check(&cli.country)),
         None => {}
     }
@@ -140,7 +142,10 @@ fn main() -> Result<()> {
 async fn connectivity_check(country: &str) -> Result<()> {
     let _lock = session::lock_instance()?;
     eprintln!("Conectando ao Tor com saída {country}…");
-    let mut worker = tor::Worker::start(country).await?;
+    let stop_worker = tokio_util::sync::CancellationToken::new();
+    let mut worker = tor::Worker::start(country, &stop_worker, |message| eprintln!("{message}"))
+        .await?
+        .context("o início do cliente Tor foi cancelado")?;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let address = listener.local_addr()?;
     let router = proxy::Router::new(

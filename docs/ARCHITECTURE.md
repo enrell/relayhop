@@ -29,9 +29,11 @@ Conexões já estabelecidas não migram. Fechar seu transporte reproduz a necess
 
 ### Ciclo de vida
 
-O worker herda apenas stdin/stdout necessários ao protocolo de controle e stderr para diagnóstico. Seu stdout fornece uma única linha limitada com o endereço local depois do bootstrap. O pai mantém stdin aberto; EOF faz o processo filho encerrar mesmo se o runtime async estiver ocupado. `kill_on_drop` é uma proteção adicional. Não usa serviço global ou Tor Browser existente.
+O worker herda apenas stdin/stdout necessários ao protocolo de controle. No Windows, `stderr` vai para `NUL` em uma execução normal do Explorer, que não possui console válido; quando `RUST_LOG` é definido, ele é canalizado ao processo pai para permitir diagnóstico explícito. Falhas e progresso para a interface trafegam pelo protocolo limitado do stdout. O pai recebe mensagens `PROGRESS`, `READY` ou `ERROR`, com linha e payload limitados, e mantém stdin aberto; EOF faz o processo filho encerrar mesmo se o runtime async estiver ocupado. O encerramento normal tem prazo, seguido de término forçado também limitado, e `kill_on_drop` é uma proteção adicional. Não usa serviço global ou Tor Browser existente.
 
-O encaminhador principal existe durante toda a sessão Discord. Fechar sua janela minimiza; parar o encaminhador explicitamente interrompe as conexões que dependem dele. O monitor de processos tem tolerância de três amostras ausentes. Não tenta terminar processos Discord automaticamente.
+O projeto aplica uma cópia local corrigida de `saturating-time` 0.4.0. A versão publicada pode entrar em loop ao procurar os limites de `SystemTime` no Windows: passos menores que o `FILETIME` de 100 ns não alteram o valor, embora `checked_add`/`checked_sub` retornem sucesso. A correção trata ausência de progresso como limite e inclui um teste com relógio de granularidade reduzida. Sem ela, o Arti recebe o consenso, fixa um núcleo e permanece em 15% indefinidamente.
+
+O encaminhador principal existe durante toda a sessão Discord. Fechar sua janela a recolhe para a bandeja; parar o encaminhador explicitamente interrompe as conexões que dependem dele. No Windows, o item `Sair do RelayHop` também publica uma mensagem `WM_CLOSE` para a janela principal: isso permite encerrar mesmo quando o viewport está invisível e não pode processar uma nova pintura do egui. O monitor de processos tem tolerância de três amostras ausentes. Não tenta terminar processos Discord automaticamente.
 
 ### Política de rede
 

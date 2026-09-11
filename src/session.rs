@@ -71,13 +71,17 @@ pub async fn run(options: Options, controls: Controls, events: Sender<Event>) ->
         "Conectando ao Tor (saída {})… A primeira conexão pode demorar.",
         options.country
     ));
-    let mut worker = tokio::select! {
-        _ = controls.stop.cancelled() => return Ok(()),
-        result = Worker::start(&options.country) => result?,
+    let Some(mut worker) =
+        Worker::start(&options.country, &controls.stop, |message| status(&message)).await?
+    else {
+        return Ok(());
     };
     status("Testando acesso HTTPS ao Discord pela rede Tor…");
     tokio::select! {
-        _ = controls.stop.cancelled() => return Ok(()),
+        _ = controls.stop.cancelled() => {
+            worker.stop().await?;
+            return Ok(());
+        },
         result = tor::check_discord(worker.address) => result.context("Esta saída Tor não conseguiu acessar o Discord. Tente novamente ou selecione outro país.")?,
     }
     // The user may have opened Discord during the bootstrap.
