@@ -12,7 +12,7 @@ Em agosto de 2026, a ANPD determinou a suspensão do recurso "Go Live" no Brasil
 
 ## Começando em 1 minuto
 
-**No Windows:** baixe o `relayhop.exe` na página [**Releases**](https://github.com/enrell/relayhop/releases) e dê dois cliques. (O Windows pode mostrar um aviso azul por ser um programa novo — é só clicar em "Mais informações" e "Executar assim mesmo".)
+**No Windows:** use a versão instalada pela Microsoft Store quando ela estiver disponível ou baixe o [`relayhop.exe` portátil](https://github.com/enrell/relayhop/releases/latest/download/relayhop.exe). O executável portátil não exige instalação; enquanto não tiver reputação suficiente no SmartScreen, o Windows pode pedir confirmação na primeira execução.
 
 **No Linux:** cole isto no terminal:
 
@@ -64,6 +64,18 @@ Fechar minimiza para a bandeja (perto do relógio), não encerra. Para sair de v
 O RelayHop não vê sua senha, suas mensagens nem sua tela — ele só encaminha a conexão, sem abrir o conteúdo. Nada do que você faz é registrado ou enviado para lugar nenhum. Detalhes técnicos abaixo.
 
 ## Instalação detalhada
+
+<details>
+<summary><b>Microsoft Store (mantenedores)</b></summary>
+
+O gerador já contém a identidade oficial reservada no Partner Center:
+
+```powershell
+.\packaging\build-msix.ps1
+```
+
+O pacote é criado em `dist/`. Cada tag também gera o MSIX como artefato privado do workflow para envio ao Partner Center; apenas o `.exe` portátil é anexado à release pública. A Microsoft assina o MSIX depois da certificação.
+</details>
 
 <details>
 <summary><b>Windows (instalador automático)</b></summary>

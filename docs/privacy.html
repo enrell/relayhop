@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Política de privacidade do RelayHop.">
+  <meta name="theme-color" content="#0f1012">
+  <link rel="icon" type="image/png" href="relayhop.png">
+  <title>Privacidade — RelayHop</title>
+  <style>
+    :root{--bg:#0f1012;--panel:#17191c;--ink:#f1efe9;--muted:#aaa8a1;--line:#303339;--blue:#8ca8ff}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+    main{width:min(calc(100% - 36px),780px);margin:0 auto;padding:56px 0 80px}
+    header{padding-bottom:32px;border-bottom:1px solid var(--line)}
+    h1{margin:10px 0 8px;font-size:clamp(38px,7vw,58px);line-height:1;letter-spacing:-.045em}
+    h2{margin:38px 0 8px;font-size:21px;letter-spacing:-.02em}
+    p,li{color:var(--muted)}
+    a{color:var(--blue);text-underline-offset:3px}
+    .brand{color:var(--ink);text-decoration:none;font-weight:750}
+    .date{margin:0;font-size:13px}
+    .summary{margin-top:28px;padding:18px 20px;background:var(--panel);border:1px solid var(--line);color:var(--ink)}
+    ul{padding-left:22px}
+    footer{margin-top:48px;padding-top:22px;border-top:1px solid var(--line);font-size:13px}
+    .english{margin-top:60px;padding-top:42px;border-top:1px solid var(--line)}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <a class="brand" href="./">← RelayHop</a>
+    <h1>Política de privacidade</h1>
+    <p class="date">Última atualização: 11 de setembro de 2026</p>
+  </header>
+
+  <p class="summary"><strong>Resumo:</strong> o RelayHop não coleta, armazena, vende nem envia dados pessoais ou telemetria ao desenvolvedor. Ele encaminha temporariamente conexões criptografadas do Discord pela rede Tor e, depois, pela conexão direta do dispositivo.</p>
+
+  <h2>Quem é responsável</h2>
+  <p>O RelayHop é publicado por Enrell como um projeto independente e de código aberto. Ele não é afiliado ao Discord nem ao Tor Project.</p>
+
+  <h2>Dados coletados pelo desenvolvedor</h2>
+  <p>Nenhum. O RelayHop não possui conta de usuário, servidor próprio, publicidade, análise de uso, rastreamento, telemetria ou mecanismo de relatório automático. O desenvolvedor não recebe nomes, endereços de e-mail, endereços IP, identificadores do dispositivo, credenciais, mensagens, arquivos, áudio, vídeo ou conteúdo de tela.</p>
+
+  <h2>Funcionamento da rede</h2>
+  <p>Para executar sua função, o RelayHop cria um proxy SOCKS5 somente no endereço local do dispositivo e inicia o aplicativo oficial do Discord configurado para usá-lo. Durante a abertura, conexões destinadas a domínios permitidos do Discord, somente na porta 443, são encaminhadas pela rede Tor. Depois da transição, novas conexões são encaminhadas diretamente pela internet do usuário.</p>
+  <p>O tráfego de aplicação permanece protegido pelo TLS do Discord. O RelayHop não descriptografa, inspeciona, registra ou modifica senhas, mensagens, chamadas, transmissões ou outros conteúdos. Operadores da rede Tor, provedores de internet e o Discord podem processar dados técnicos, como endereços IP e horários de conexão, conforme suas próprias políticas e para fornecer seus respectivos serviços.</p>
+
+  <h2>Dados armazenados no dispositivo</h2>
+  <p>O RelayHop mantém apenas arquivos operacionais locais necessários ao cliente Tor, como cache de diretórios e estado de circuitos, além de um arquivo de bloqueio que impede sessões simultâneas. Esses arquivos não são enviados ao desenvolvedor. O aplicativo não altera arquivos de configuração do Discord.</p>
+
+  <h2>Compartilhamento e venda</h2>
+  <p>O desenvolvedor não compartilha nem vende dados pessoais porque o RelayHop não os coleta. As conexões técnicas descritas acima são necessárias para o funcionamento solicitado pelo usuário e não são usadas pelo desenvolvedor para publicidade ou criação de perfis.</p>
+
+  <h2>Controle do usuário e retenção</h2>
+  <p>O usuário inicia e encerra cada sessão. Ao sair do RelayHop, o proxy e o processo Tor são encerrados. Arquivos operacionais locais podem permanecer no diretório de dados do aplicativo para acelerar usos futuros e podem ser excluídos pelo usuário após encerrar o aplicativo. Como nenhum dado é recebido pelo desenvolvedor, não há dados pessoais mantidos por ele para acessar, corrigir ou excluir.</p>
+
+  <h2>Crianças</h2>
+  <p>O RelayHop não é direcionado especificamente a crianças e não coleta conscientemente dados pessoais de crianças.</p>
+
+  <h2>Alterações nesta política</h2>
+  <p>Esta página será atualizada se as funções ou práticas de dados do RelayHop mudarem. A data da revisão mais recente será indicada no início.</p>
+
+  <h2>Contato</h2>
+  <p>Dúvidas sobre privacidade podem ser enviadas pela página pública de <a href="https://github.com/enrell/relayhop/issues">issues do projeto</a>. Não publique informações pessoais ou confidenciais em uma issue.</p>
+
+  <section class="english" lang="en">
+    <h1>Privacy Policy</h1>
+    <p class="date">Last updated: September 11, 2026</p>
+    <p class="summary"><strong>Summary:</strong> RelayHop does not collect, store, sell, or send personal data or telemetry to the developer. It temporarily forwards encrypted Discord connections through the Tor network and then through the device's direct internet connection.</p>
+
+    <h2>Controller</h2>
+    <p>RelayHop is published by Enrell as an independent, open-source project. It is not affiliated with Discord or the Tor Project.</p>
+
+    <h2>Data collected by the developer</h2>
+    <p>None. RelayHop has no user accounts, developer-operated server, advertising, analytics, tracking, telemetry, or automatic reporting. The developer does not receive names, email addresses, IP addresses, device identifiers, credentials, messages, files, audio, video, or screen content.</p>
+
+    <h2>Network operation</h2>
+    <p>To perform its function, RelayHop creates a SOCKS5 proxy bound only to the local device and launches the official Discord application configured to use it. During startup, connections to allowed Discord domains on port 443 are forwarded through the Tor network. After the transition, new connections are forwarded through the user's direct internet connection.</p>
+    <p>Application traffic remains protected by Discord's TLS. RelayHop does not decrypt, inspect, log, or modify passwords, messages, calls, streams, or other content. Tor network operators, internet providers, and Discord may process technical data such as IP addresses and connection times under their own policies and to provide their respective services.</p>
+
+    <h2>Data stored on the device</h2>
+    <p>RelayHop keeps only local operational files required by the Tor client, such as directory caches and circuit state, plus a lock file that prevents simultaneous sessions. These files are not sent to the developer. The application does not modify Discord configuration files.</p>
+
+    <h2>Sharing and sale</h2>
+    <p>The developer does not share or sell personal data because RelayHop does not collect it. The technical connections described above are required for the function requested by the user and are not used by the developer for advertising or profiling.</p>
+
+    <h2>User control and retention</h2>
+    <p>The user starts and ends each session. Exiting RelayHop stops its proxy and Tor process. Local operational files may remain in the application's data directory to speed up future use and can be deleted by the user after exiting the application. Because no data is received by the developer, the developer retains no personal data to access, correct, or delete.</p>
+
+    <h2>Children</h2>
+    <p>RelayHop is not specifically directed to children and does not knowingly collect personal data from children.</p>
+
+    <h2>Changes to this policy</h2>
+    <p>This page will be updated if RelayHop's features or data practices change. The latest revision date will be shown at the top.</p>
+
+    <h2>Contact</h2>
+    <p>Privacy questions may be submitted through the project's public <a href="https://github.com/enrell/relayhop/issues">issue tracker</a>. Do not post personal or confidential information in an issue.</p>
+  </section>
+
+  <footer>RelayHop · Enrell · <a href="https://github.com/enrell/relayhop">Código-fonte / Source code</a></footer>
+</main>
+</body>
+</html>

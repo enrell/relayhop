@@ -50,6 +50,10 @@ jobs:
           Copy-Item target/release/relayhop.exe dist/relayhop.exe
           $exeHash = (Get-FileHash dist/relayhop.exe -Algorithm SHA256).Hash.ToLower()
           "$exeHash  relayhop.exe" | Set-Content dist/relayhop.exe.sha256
+      - name: Build Microsoft Store submission package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./packaging/build-msix.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: relayhop-${{ matrix.platform }}
@@ -57,6 +61,7 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/*.exe
+            dist/*.msix
             dist/*.sha256
           if-no-files-found: error
       - name: Publish to GitHub Release
