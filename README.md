@@ -3,6 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/enrell/relayhop)](https://github.com/enrell/relayhop/releases)
 [![Check](https://github.com/enrell/relayhop/actions/workflows/ci.yml/badge.svg)](https://github.com/enrell/relayhop/actions/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)](https://github.com/enrell/relayhop/releases)
+[![Sponsor](https://img.shields.io/github/sponsors/enrell?logo=githubsponsors&label=patrocinar)](https://github.com/sponsors/enrell)
 
 **Libera a transmissão de tela do Discord em 1 clique. Depois ele sai do caminho e sua internet volta ao normal.**
 
@@ -157,3 +158,5 @@ Verificações: `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D 
 ## Autoria
 
 Projeto independente, feito do zero em Rust. Sem afiliação com Discord ou Tor Project. Licença [MIT](LICENSE); dependências mantêm suas licenças.
+
+Se o RelayHop foi útil para você, [apoie o desenvolvimento pelo GitHub Sponsors](https://github.com/sponsors/enrell).

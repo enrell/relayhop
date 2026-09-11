@@ -360,11 +360,14 @@ footer{
 }
 .footer-inner{
   display:flex;
+  align-items:center;
   justify-content:space-between;
   gap:18px;
   flex-wrap:wrap;
 }
-.footer-links{display:flex;gap:16px}
+.footer-actions{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.footer-links{display:flex;align-items:center;gap:16px}
+.sponsor-frame{display:block;width:114px;height:32px;border:0;border-radius:6px}
 
 @media(max-width:760px){
   .section-grid{grid-template-columns:1fr;gap:26px}
@@ -664,11 +667,14 @@ footer{
 <footer>
   <div class="wrap footer-inner">
     <span>Projeto independente · Discord e Tor Project não são afiliados · MIT</span>
-    <div class="footer-links">
-      <a href="privacy.html">privacidade</a>
-      <a href="https://github.com/enrell/relayhop">código</a>
-      <a href="https://github.com/enrell/relayhop/releases">releases</a>
-      <a href="https://github.com/enrell/relayhop/issues">issues</a>
+    <div class="footer-actions">
+      <iframe class="sponsor-frame" src="https://github.com/sponsors/enrell/button" title="Patrocinar enrell no GitHub" height="32" width="114" loading="lazy"></iframe>
+      <div class="footer-links">
+        <a href="privacy.html">privacidade</a>
+        <a href="https://github.com/enrell/relayhop">código</a>
+        <a href="https://github.com/enrell/relayhop/releases">releases</a>
+        <a href="https://github.com/enrell/relayhop/issues">issues</a>
+      </div>
     </div>
   </div>
 </footer>
