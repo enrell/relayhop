@@ -43,12 +43,15 @@ Handshake de controle (`Welcome` → `Hello`, com uma repetição) precede qualq
 ## Transporte
 
 - Hoje: par loopback cruzado com filas limitadas (64 datagramas) para demo, `diag` e testes.
-- Gate pendente: worker Tailcat externo (binário opcional no PATH, sondado com args estruturados, sem shell). Nada de VPN global, exit node ou serviços de shell/arquivos do Tailcat.
-- Orçamento UDP documentado: 1232 bytes por datagrama (cabeçalho de 20 + até 1212 de payload), frames de até 1 MB em no máximo 64 fragmentos, remontador com 8 frames simultâneos.
+- Gate fase 1 (medido, ver BENCHMARKS.md §2): Tailcat v0.6.0 com DERP próprio —
+  7/7 cenários CGNAT conectam via relay (≥18 Mbps, 0% perda); direto P2P em LAN.
+- Direção provisória: **A (WebRTC) como mecanismo de mídia**, com Tailcat como
+  transporte avaliado — par `webrtcbin` local funcional (BENCHMARKS.md §3).
+  Decisão final exige DERP público medido + captura real + Windows.
 
 ## Mídia
 
-Fonte sintética com taxa derivada do bitrate-alvo, keyframes periódicos e descarte sob pressão (fila de 8, nunca cresce memória). Captura real (Windows Graphics Capture, portal ScreenCast + PipeWire) e encode por hardware entram pelo gate da fase 2; `capture_plan()` e o `diag` declaram o pendente.
+Fonte sintética com taxa derivada do bitrate-alvo, keyframes periódicos e descarte sob pressão (fila de 8, nunca cresce memória). Captura real (Windows Graphics Capture, portal ScreenCast + PipeWire) e encode por hardware entram pelo gate da fase 2; `capture_plan()` e o `diag` declaram o pendente. Protótipos e números: `worker/media/`, BENCHMARKS.md §3 (openh264 ~150 fps/RSS 33 MB a 720p; VA-API HW funcional).
 
 ## Convites e segurança
 

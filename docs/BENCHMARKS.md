@@ -47,7 +47,33 @@ Testes extras (mesma topologia, container de depuração):
   e `disco_post_blast` com **`direct:true`** via IP local, RTT ~0,5 ms.
   O caminho direto do Tailcat **funciona** — o gargalo é o hairpin duplo-CGNAT.
 
-## 3. Por que o P2P direto não estabeleceu no hairpin (análise honesta)
+## 3. Gate de mídia local — encode, RTP, WebRTC, PipeWire (fase 2, parcial)
+
+Medido — 2026-09-13 (Ryzen 5 7520U, 8 threads, Radeon, GStreamer 1.28.6 com
+plugins good/bad/ugly/libav extraídos sem root via `GST_PLUGIN_PATH`;
+fonte `videotestsrc` 720p30, 900 frames salvo indicação). Carga da máquina
+registrada por teste (build Rust do usuário concorrente no início).
+
+| Teste | Resultado | Números |
+|---|---|---|
+| x264 ultrafast zerolatency | ok | ~120 fps máx, CPU ~25% (8 cores), RSS ~53 MB |
+| x264 veryfast zerolatency | ok | 78 fps, CPU ~33%, RSS ~103 MB |
+| openh264 (complexity low) | ok | **~150 fps, CPU ~12%, RSS ~33 MB** — candidato principal |
+| vp8 realtime (deadline 1) | ok | 64 fps, CPU ~12%, RSS ~50 MB |
+| VA-API H.264 (ffmpeg, Radeon) | ok | 90 frames em 0,81 s (**3,6× realtime**), CPU mínima — HW funcional |
+| RTP loopback (pay→UDP→depay→decode) | ok | **300/300 frames**, pacing 30 fps preservado (PTS 1,8 s→11,7 s) |
+| webrtcbin par local (DTLS-SRTP) | ok | 300 frames pedidos, **360 recebidos em 10 s** — alternativa A funcional |
+| PipeWire sink→src | **bloqueado** | nó publicado com porta (`capture_1`, estado suspended), mas `pipewiresrc` retorna `target not found` (por nome e por serial) |
+| Soak 15 min x264 ao vivo | ok | 90 amostras, RSS 76→69 MB (**crescimento −7 MB**), máx 76 MB, CPU ~6,5%, mp4 314 MB (~2,8 Mbps) |
+
+Leitura: todos os encoders de software têm folga ≥2× para 720p30 ao vivo
+nesta CPU modesta; openh264 é o mais rápido e leve (qualidade por bitrate a
+avaliar depois contra x264). O caminho RTP e o par WebRTC de referência
+funcionam — a escolha A/B/C do PLAN.md pende para **A (WebRTC)**, com Tailcat
+como transporte avaliado em §2. Captura real (portal ScreenCast) e Windows
+continuam pendentes e exigem sessão interativa (protocolo em VALIDATION.md).
+
+## 4. Por que o P2P direto não estabeleceu no hairpin (análise honesta)
 
 Evidência (conntrack + sniffers AF_PACKET nos dois lados):
 
@@ -76,7 +102,7 @@ faixas SNAT sobrepostas em `.23` (quebrava até o TCP); `fd00:pub::` inválido
 (abortava o S5); ULA ignorada pelo netmon com IPv4 presente (S5 usa
 `2001:db8:99::/64`, global mesmo enlace).
 
-## 4. O que este gate prova e o que continua aberto
+## 5. O que este gate prova e o que continua aberto
 
 Provado:
 
@@ -95,10 +121,10 @@ Aberto (não prometer até medir):
 - P2P direto através de CGNATs reais (Vivo/Claro/TIM fibra, 4G).
 - Troca de rede no meio da sessão, queda do DERP, reconexão (previstos no
   PLAN.md, ainda não executados).
-- Fase 2 (mídia): captura, encode HW, GStreamer/WebRTC vs datagramas Tailcat,
-  15 min contínuos, latência captura→apresentação <300 ms.
+- Fase 2 restante: captura real via portal, áudio do sistema, Windows,
+  latência fim a fim com rede, decisão A/B/C final.
 
-## Protocolo de medição (regras permanentes)
+## 6. Protocolo de medição (regras permanentes)
 
 - Medir RSS/PSS ou working set de todos os processos, CPU, engine GPU, bitrate,
   FPS capturado/codificado/apresentado, frames descartados, perda e reconexões.
