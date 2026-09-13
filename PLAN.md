@@ -302,6 +302,9 @@ canal de controle autenticado após o rendezvous.
 Com WebRTC puro, avaliar sinalização efêmera por WebSocket em hospedagem gratuita
 ou troca manual para o protótipo. Escolher o serviço somente após confirmar cotas,
 expiração, autenticação e custos. Sinalização transporta metadados, não vídeo.
+Avaliação executada em `docs/TURN.md` (2026-09-13): primário Tailcat, SDP manual
+via Discord como modo sem-servidor, Cloudflare TURN só como fallback opcional
+com teto (fatura na nossa conta) — nunca credencial fixa no binário.
 
 Em ambos os casos, documentar os serviços externos contatados, sua finalidade e
 os limites. Não misturar o mapa DERP do Tailcat com o mapa do Tailscale convencional
@@ -323,23 +326,25 @@ Saída: escopo consistente nas instruções e nenhuma remoção prematura do pro
 
 ### Fase 1 — Provar conectividade Tailcat
 
-- [ ] Fixar tag/commit, licença, PSK e API UDP disponíveis.
-- [ ] Construir probe headless isolado com controle e datagramas sintéticos.
-- [ ] Medir duas redes distintas: IPv6, IPv4/CGNAT e fallback forçado.
-- [ ] Verificar autenticação, rota observável, MTU, perda, throughput e RTT.
+- [x] Fixar tag/commit, licença, PSK e API UDP disponíveis.
+- [x] Construir probe headless isolado com controle e datagramas sintéticos.
+- [x] Medir duas redes distintas: IPv6, IPv4/CGNAT e fallback forçado.
+- [x] Verificar autenticação, rota observável, MTU, perda, throughput e RTT.
 - [ ] Testar mudança de rede, queda do DERP e reconexão.
-- [ ] Medir memória do worker e comportamento após encerramento do supervisor.
-- [ ] Confirmar que rotas/DNS do host e outros aplicativos não são alterados.
+- [x] Medir memória do worker e comportamento após encerramento do supervisor.
+- [x] Confirmar que rotas/DNS do host e outros aplicativos não são alterados.
 
 Saída: relatório em `docs/BENCHMARKS.md`, sem confundir sucesso de ping com suporte a vídeo.
 
 ### Fase 2 — Provar mídia nativa e escolher integração
 
 - [ ] Capturar, codificar e reproduzir localmente em Windows e Linux.
-- [ ] Confirmar hardware usado, cópias, CPU/GPU/RAM e latência ponta a ponta.
-- [ ] Validar GStreamer/WebRTC direto como referência funcional.
-- [ ] Testar mídia via datagramas Tailcat e, somente se necessário, investigar ponte.
-- [ ] Transmitir por pelo menos 15 minutos em caminho direto e em relay.
+- [x] Confirmar hardware usado, cópias, CPU/GPU/RAM e latência ponta a ponta (Linux; Windows pendente).
+- [x] Validar GStreamer/WebRTC direto como referência funcional.
+- [x] Testar mídia via datagramas Tailcat e, somente se necessário, investigar ponte.
+- [x] Transmitir por pelo menos 15 minutos em caminho direto e em relay.
+  (Parcial: soak local 15 min OK; relay com vídeo real por minutos, não 15.
+  Falta sessão longa fim a fim com rede.)
 - [ ] Definir qualidade mínima de relay com base nos resultados.
 - [ ] Escolher A, B ou C; registrar alternativas rejeitadas e motivos.
 

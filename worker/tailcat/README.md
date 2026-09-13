@@ -1,16 +1,39 @@
-# Worker Tailcat (gate pendente)
+# Worker Tailcat (`relay/`)
 
-Este diretório abrigará o worker Go de conectividade **somente se** passar pelo gate das fases 1–2 do [PLAN.md](../PLAN.md): NAT traversal e DERP público com banda suficiente para vídeo, memória aceitável rodando junto com Discord/jogos e API fixada numa versão.
+Worker Go supervisionado que carrega **somente o tráfego deste app** (um
+control stream TCP + datagramas UDP) sobre Tailcat/WireGuard, sem conta,
+TUN, root ou alteração de rotas/DNS. Versão fixada: `tailcat v0.6.0`
+(`worker/tailcat/relay/go.mod`). Build: `cd worker/tailcat/relay &&
+go build -o relayhop-tailcat .`; o Rust procura em `RELAYHOP_TAILCAT_BIN`,
+ao lado do executável e no PATH.
 
-## Regras quando existir
+## Protocolo stdio (binário enquadrado, ver `relay/main.go`)
 
-- Versão/protocolo do Tailcat fixados; PSK habilitado; endereço `tc…` tratado como segredo.
-- Executável empacotado junto ao app; nunca baixar binário arbitrário em cada inicialização.
-- Spawn com argumentos estruturados, sem shell; IPC de controle por pipes herdados com framing e limites.
-- Somente datagramas do app; nenhum serviço de shell, arquivos, exit node ou SOCKS genérico.
-- EOF do supervisor encerra o worker; limpeza em fechamento, erro, crash e saída do pai.
-- CI com formatação, `go vet`, testes e race detector onde suportado.
+Pai → worker: `[len u32BE][0x01][controle]`, `[len u32BE][0x02][mídia ≤1232 B]`,
+`[len=1][0xFF]` (fechar). Worker → pai: `0x81` (controle), `0x82` (mídia).
+Eventos em JSON por linha no **stderr**: `ready{addr}`, `peer`,
+`path{direct|relay|unknown}`, `closed`, `error`. **stdout é só frames** —
+nada de texto (um `Println` de debug aqui já dessincronizou o protocolo uma
+vez; há teste contra regressão implícita na forma do framing).
 
-## Estado atual
+## Regras
 
-Nenhum código Go ainda. O Rust detecta um binário `tailcat` opcional no PATH (`relayhop diag`) sem exigir nem alterar nada no sistema.
+- PSK do Tailcat ativo (padrão); endereço `tc…` é segredo portador e viaja
+  somente dentro do convite `rh1.…`, nunca em logs.
+- Heartbeat UDP de 1 byte (`0x00`) a cada 15 s: estabelece o fluxo do servidor
+  (que só responde ao que já viu) e mantém o NAT aberto; descartado no par,
+  nunca entregue ao app. Datagramas do app têm ≥20 bytes.
+- Um espectador por sala: primeira conexão TCP vence, demais recusadas.
+- Caminho (`direct|relay`) reportado pelo cliente via DiscoPing; servidor não
+  tem API equivalente — o host exibe o `Link` do espectador.
+- EOF no stdin encerra; `kill_on_drop` no pai; `F_CLOSE` + espera no
+  desligamento gracioso. Falha fecha, nunca cai para socket sem criptografia.
+- `gofmt`, `go vet`, `go test` limpos (framing tem teste unitário).
+
+## Estado e limites medidos
+
+- Simulação duplo-CGNAT: rendezvous sempre conecta; relay carrega tudo;
+  direto não estabeleceu no hairpin (análise em `docs/BENCHMARKS.md` §4).
+- LAN: `direct:true`. Relay próprio: ≥18 Mbps, 0% perda.
+- DERP **público** (rate limit desconhecido) e CGNATs reais: em aberto.
+- `probe/` é o instrumento de medição; `sim/` a topologia containerizada.

@@ -113,6 +113,12 @@ Provado:
 - Caminho direto P2P real em LAN (`direct:true`).
 - Pegada do probe Tailcat: dezenas de MB, compatível com rodar ao lado de
   Discord/jogos (a medir junto do Rust + mídia na fase 2).
+- **E2E `host`↔`watch` (2026-09-13, mesma máquina, DERP próprio):** handshake
+  Welcome→Hello→Link, 30 s de mídia sintética a ~2570 kbps/30 fps com
+  **0 descartes**, upgrade de caminho desconhecido→**direto-ipv4** exibido nos
+  dois lados, `Bye` e relatórios limpos. Bugs achados no caminho e corrigidos:
+  endereço impresso na stdout do worker (dessincronizava o framing) e leitor
+  duplo concorrente no stdin (roubava bytes do stream).
 
 Aberto (não prometer até medir):
 

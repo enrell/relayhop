@@ -28,16 +28,22 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Criar um convite e aguardar o espectador (transporte real pendente do gate).
+    /// Criar um convite e transmitir ao espectador via P2P.
     Host {
         /// Fonte de captura (somente sintética até o gate de mídia).
         #[arg(long, default_value = "synthetic-720p30")]
         source: String,
+        /// Mapa DERP alternativo (vazio = padrão do worker).
+        #[arg(long, default_value = "")]
+        derp_map: String,
     },
-    /// Validar um convite (conexão remota pendente do gate).
+    /// Assistir com um convite `rh1.…` recebido do transmissor.
     Watch {
         /// Convite `rh1.…` recebido do transmissor.
         invite: String,
+        /// Mapa DERP alternativo (vazio = padrão do worker).
+        #[arg(long, default_value = "")]
+        derp_map: String,
     },
     /// Demonstração local ponta a ponta, sem rede pública.
     LocalDemo {
@@ -117,8 +123,12 @@ fn main() -> Result<()> {
         .init();
     let cli = Cli::parse();
     match cli.command {
-        Some(Command::Host { source }) => runtime()?.block_on(host_command(source)),
-        Some(Command::Watch { invite }) => runtime()?.block_on(watch_command(invite)),
+        Some(Command::Host { source, derp_map }) => {
+            runtime()?.block_on(host_command(source, derp_map))
+        }
+        Some(Command::Watch { invite, derp_map }) => {
+            runtime()?.block_on(watch_command(invite, derp_map))
+        }
         Some(Command::LocalDemo { secs }) => runtime()?.block_on(local_demo_command(secs)),
         Some(Command::Diag) => runtime()?.block_on(diag_command()),
         None => {
@@ -131,33 +141,80 @@ fn main() -> Result<()> {
     }
 }
 
-async fn host_command(source: String) -> Result<()> {
-    let _lock = session::lock_instance()?;
+async fn host_command(source: String, derp_map: String) -> Result<()> {
     let options = session::Options {
         source_id: source,
+        derp_map,
         ..session::Options::default()
     };
     options.validate()?;
-    let (invite, _) = session::prepare_host(&options, session::now_secs())?;
-    let valid_mins = invite.expires_at().saturating_sub(session::now_secs()) / 60;
-    println!(
-        "Convite (compartilhe com o espectador): {}",
-        invite.encode()
+    let controls = session::Controls::default();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        for event in rx {
+            match event {
+                session::Event::Status(message)
+                | session::Event::Participant(message)
+                | session::Event::Metrics(message) => eprintln!("{message}"),
+                session::Event::InviteReady { redacted } => {
+                    eprintln!("Sala: {redacted}");
+                }
+                // The full token is printed ONCE to stdout for copying.
+                // It never appears in logs, status lines or errors.
+                session::Event::InviteToken(token) => {
+                    println!("Convite (compartilhe com o espectador): {token}");
+                }
+                session::Event::Finished => eprintln!("Sessão encerrada."),
+                session::Event::Error(message) => eprintln!("Erro: {message}"),
+            }
+        }
+    });
+    let stop = controls.stop.clone();
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            stop.cancel();
+        }
+    });
+    let report = session::run_host(options, controls, tx).await?;
+    eprintln!(
+        "Resumo: {} frames enviados, {} bytes, {} bps médios.",
+        report.frames, report.tx_bytes, report.avg_bitrate_bps
     );
-    println!("Sala: {} (expira em ~{valid_mins} min)", invite.redacted());
-    println!(
-        "Aguardando espectador… {}. Mantenha este terminal aberto.",
-        session::TRANSPORT_UNAVAILABLE
-    );
-    tokio::signal::ctrl_c().await?;
-    println!("Sessão encerrada; o convite expirou com a sala.");
     Ok(())
 }
 
-async fn watch_command(invite: String) -> Result<()> {
-    let parsed = session::preview_watch(&invite, session::now_secs())?;
-    eprintln!("Convite válido para a sala {}.", parsed.redacted());
-    Err(session::remote_transport_error())
+async fn watch_command(invite: String, derp_map: String) -> Result<()> {
+    let options = session::Options {
+        derp_map,
+        ..session::Options::default()
+    };
+    options.validate()?;
+    let controls = session::Controls::default();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        for event in rx {
+            match event {
+                session::Event::Status(message)
+                | session::Event::Participant(message)
+                | session::Event::Metrics(message) => eprintln!("{message}"),
+                session::Event::InviteReady { .. } | session::Event::InviteToken(_) => {}
+                session::Event::Finished => eprintln!("Sessão encerrada."),
+                session::Event::Error(message) => eprintln!("Erro: {message}"),
+            }
+        }
+    });
+    let stop = controls.stop.clone();
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            stop.cancel();
+        }
+    });
+    let report = session::run_watch(&invite, options, controls, tx).await?;
+    eprintln!(
+        "Resumo: {} frames remontados, {} bytes recebidos, {} bps médios.",
+        report.reassembled, report.rx_bytes, report.avg_bitrate_bps
+    );
+    Ok(())
 }
 
 async fn local_demo_command(secs: u64) -> Result<()> {
@@ -177,6 +234,8 @@ async fn local_demo_command(secs: u64) -> Result<()> {
                 session::Event::InviteReady { redacted } => {
                     eprintln!("Sala local: {redacted}");
                 }
+                // Local demo never emits tokens; arm kept for exhaustiveness.
+                session::Event::InviteToken(_) => {}
                 session::Event::Finished => eprintln!("Demonstração concluída."),
                 session::Event::Error(message) => eprintln!("Erro: {message}"),
             }

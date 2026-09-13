@@ -16,13 +16,29 @@ pub const MAX_INVITE_CHARS: usize = 2048;
 pub const ROOM_BYTES: usize = 16;
 pub const PSK_BYTES: usize = 32;
 pub const DEFAULT_INVITE_TTL_SECS: u64 = 900;
+/// Tailcat address prefix + hard bound (PSK-bearing bearer secret).
+pub const MAX_TC_CHARS: usize = 1024;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Invite {
     version: u16,
     room: [u8; ROOM_BYTES],
     psk: [u8; PSK_BYTES],
     expires_at: u64,
+    /// Tailcat `tc…` address (transport rendezvous + WireGuard PSK).
+    /// `None` for offline-only invites (demo/diag); remote watch requires it.
+    tc: Option<String>,
+}
+
+/// Debug never leaks secrets: only the redacted room label.
+impl std::fmt::Debug for Invite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Invite")
+            .field("redacted", &self.redacted())
+            .field("expires_at", &self.expires_at)
+            .field("has_transport", &self.tc.is_some())
+            .finish()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -31,6 +47,8 @@ struct InviteBody {
     room: String,
     psk: String,
     exp: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tc: Option<String>,
 }
 
 impl Invite {
@@ -48,6 +66,7 @@ impl Invite {
             room,
             psk,
             expires_at: now_secs.saturating_add(ttl_secs.clamp(60, 3600)),
+            tc: None,
         }
     }
 
@@ -58,7 +77,31 @@ impl Invite {
             room: [7u8; ROOM_BYTES],
             psk: [9u8; PSK_BYTES],
             expires_at: 1_700_000_000,
+            tc: None,
         }
+    }
+
+    /// Attach the Tailcat rendezvous address. Validated as opaque bearer
+    /// token: prefix + charset + bound (never logged; see [`Invite::redacted`]).
+    pub fn with_transport(mut self, tc: &str) -> Result<Self> {
+        let tc = tc.trim();
+        ensure!(
+            !tc.is_empty() && tc.len() <= MAX_TC_CHARS,
+            "endereço de transporte inválido"
+        );
+        ensure!(tc.starts_with("tc"), "endereço de transporte inválido");
+        ensure!(
+            tc.bytes()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.' | b'=')),
+            "endereço de transporte inválido"
+        );
+        self.tc = Some(tc.to_string());
+        Ok(self)
+    }
+
+    /// Transport address for remote watch, if present.
+    pub fn transport(&self) -> Option<&str> {
+        self.tc.as_deref()
     }
 
     pub fn expires_at(&self) -> u64 {
@@ -80,6 +123,7 @@ impl Invite {
             room: URL_SAFE_NO_PAD.encode(self.room),
             psk: URL_SAFE_NO_PAD.encode(self.psk),
             exp: self.expires_at,
+            tc: self.tc.clone(),
         };
         let json = serde_json::to_vec(&body).expect("invite serializável");
         format!("{INVITE_PREFIX}{}", URL_SAFE_NO_PAD.encode(json))
@@ -115,6 +159,13 @@ impl Invite {
             "convite inválido"
         );
         ensure!(body.exp > 0, "convite inválido");
+        if let Some(tc) = &body.tc {
+            ensure!(
+                !tc.is_empty() && tc.len() <= MAX_TC_CHARS,
+                "convite inválido"
+            );
+            ensure!(tc.starts_with("tc"), "convite inválido");
+        }
         let mut room_arr = [0u8; ROOM_BYTES];
         room_arr.copy_from_slice(&room);
         let mut psk_arr = [0u8; PSK_BYTES];
@@ -124,6 +175,7 @@ impl Invite {
             room: room_arr,
             psk: psk_arr,
             expires_at: body.exp,
+            tc: body.tc,
         };
         ensure!(!invite.is_expired(now_secs), "convite expirado");
         Ok(invite)
@@ -164,5 +216,24 @@ mod tests {
         assert!(Invite::decode("xx1.abc", 1_699_000_000).is_err());
         assert!(Invite::decode(&"a".repeat(MAX_INVITE_CHARS + 1), 1_699_000_000).is_err());
         assert!(Invite::decode(&token, 1_800_000_000).is_err());
+    }
+
+    #[test]
+    fn transport_roundtrip_and_debug_hides_secrets() -> Result<()> {
+        let invite = Invite::fixed_for_tests().with_transport("tcTESTADDR-_.")?;
+        let token = invite.encode();
+        let parsed = Invite::decode(&token, 1_699_000_000)?;
+        assert_eq!(parsed.transport(), Some("tcTESTADDR-_."));
+        let debug = format!("{invite:?}");
+        assert!(debug.contains("rh1."));
+        assert!(!debug.contains("TESTADDR"));
+        assert!(!debug.contains(&URL_SAFE_NO_PAD.encode([9u8; PSK_BYTES])));
+        assert!(Invite::fixed_for_tests().with_transport("xxBAD").is_err());
+        assert!(
+            Invite::fixed_for_tests()
+                .with_transport(&format!("tc{}", "a".repeat(MAX_TC_CHARS)))
+                .is_err()
+        );
+        Ok(())
     }
 }

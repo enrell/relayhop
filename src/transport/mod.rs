@@ -13,6 +13,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::metrics::PathKind;
 
+pub mod tailcat;
+
 pub const MAX_UDP_DATAGRAM_BYTES: usize = crate::protocol::MAX_UDP_DATAGRAM;
 pub const LOOPBACK_QUEUE: usize = 64;
 

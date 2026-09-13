@@ -8,7 +8,6 @@ use eframe::egui::{self, Color32, RichText, Vec2};
 
 use crate::{
     media,
-    metrics::PathKind,
     protocol::VideoCodec,
     session::{self, Controls, Event},
     tray::{self, Action, State as TrayState, Tray},
@@ -72,6 +71,13 @@ struct App {
     quit_requested: bool,
 }
 
+#[derive(Clone, Copy)]
+enum SessionRole {
+    Share,
+    Watch,
+    Demo,
+}
+
 impl App {
     fn new() -> Self {
         let (tray_tx, tray_rx) = mpsc::channel();
@@ -113,73 +119,89 @@ impl App {
         self.metrics_line.clear();
     }
 
-    fn start_share(&mut self) {
-        self.reset_session();
-        let now = session::now_secs();
-        match session::prepare_host(&self.options, now) {
-            Ok((invite, _)) => {
-                let valid_mins = invite.expires_at().saturating_sub(now) / 60;
-                self.current_redacted = Some(invite.redacted());
-                self.current_token = Some(invite.encode());
-                self.active = true;
-                self.sharing = true;
-                self.status = format!(
-                    "Sala aberta (expira em ~{valid_mins} min). Envie o convite ao espectador pelo Discord."
-                );
-                self.participant = "aguardando participante".into();
-            }
-            Err(error) => {
-                self.error = true;
-                self.status = format!("{error:#}");
-            }
-        }
-    }
-
-    fn start_watch(&mut self) {
-        self.reset_session();
-        match session::preview_watch(&self.invite_input, session::now_secs()) {
-            Ok(invite) => {
-                self.current_redacted = Some(invite.redacted());
-                self.active = true;
-                self.watching = true;
-                self.status = format!(
-                    "Convite válido para {}. Caminho: {}. {}",
-                    invite.redacted(),
-                    PathKind::Unknown.as_str(),
-                    session::TRANSPORT_UNAVAILABLE
-                );
-            }
-            Err(error) => {
-                self.error = true;
-                self.status = format!("Convite inválido: {error:#}");
-            }
-        }
-    }
-
-    fn start_demo(&mut self, context: egui::Context) {
+    fn spawn_session(&mut self, context: egui::Context, role: SessionRole, status: &str) {
         self.reset_session();
         self.controls = Controls::default();
         self.active = true;
-        self.sharing = true;
-        self.status = "Demonstração local em andamento (sem rede pública).".into();
+        self.status = status.into();
+        match role {
+            SessionRole::Share | SessionRole::Demo => self.sharing = true,
+            SessionRole::Watch => self.watching = true,
+        }
         let options = self.options.clone();
         let controls = self.controls.clone();
+        let invite_input = self.invite_input.clone();
         let (tx, rx) = mpsc::channel();
         self.events = Some(rx);
         std::thread::spawn(move || {
             let result = crate::runtime().and_then(|runtime| {
-                runtime.block_on(session::run_local_demo(options, controls, tx.clone()))
+                runtime.block_on(async {
+                    match role {
+                        SessionRole::Share => {
+                            session::run_host(options, controls, tx.clone()).await?;
+                        }
+                        SessionRole::Watch => {
+                            session::run_watch(&invite_input, options, controls, tx.clone())
+                                .await?;
+                        }
+                        SessionRole::Demo => {
+                            session::run_local_demo(options, controls, tx.clone()).await?;
+                        }
+                    }
+                    Ok::<(), anyhow::Error>(())
+                })
             });
-            match result {
-                Ok(_) => {
-                    let _ = tx.send(Event::Finished);
-                }
-                Err(error) => {
-                    let _ = tx.send(Event::Error(format!("{error:#}")));
-                }
-            }
+            let event = match result {
+                Ok(()) => Event::Finished,
+                Err(error) => Event::Error(format!("{error:#}")),
+            };
+            let _ = tx.send(event);
             context.request_repaint();
         });
+    }
+
+    fn start_share(&mut self, context: egui::Context) {
+        if let Err(error) = self.options.validate() {
+            self.reset_session();
+            self.error = true;
+            self.status = format!("{error:#}");
+            return;
+        }
+        // Without the worker binary there is no transport; fail fast with the
+        // actionable message instead of a bare session.
+        if crate::transport::tailcat::find_worker_binary().is_err() {
+            self.reset_session();
+            self.error = true;
+            self.status =
+                "Worker Tailcat não encontrado. Compile worker/tailcat/relay (ver README).".into();
+            return;
+        }
+        self.spawn_session(context, SessionRole::Share, "Iniciando transporte P2P…");
+    }
+
+    fn start_watch(&mut self, context: egui::Context) {
+        if self.invite_input.trim().is_empty() {
+            self.reset_session();
+            self.error = true;
+            self.status = "Cole o convite recebido do transmissor.".into();
+            return;
+        }
+        if crate::transport::tailcat::find_worker_binary().is_err() {
+            self.reset_session();
+            self.error = true;
+            self.status =
+                "Worker Tailcat não encontrado. Compile worker/tailcat/relay (ver README).".into();
+            return;
+        }
+        self.spawn_session(context, SessionRole::Watch, "Conectando ao transmissor…");
+    }
+
+    fn start_demo(&mut self, context: egui::Context) {
+        self.spawn_session(
+            context,
+            SessionRole::Demo,
+            "Demonstração local em andamento (sem rede pública).",
+        );
     }
 
     fn stop(&mut self) {
@@ -202,6 +224,10 @@ impl App {
                     Event::Status(status) => self.status = status,
                     Event::InviteReady { redacted } => {
                         self.current_redacted = Some(redacted);
+                    }
+                    // Bearer token: shown only in the copy field, never logged.
+                    Event::InviteToken(token) => {
+                        self.current_token = Some(token);
                     }
                     Event::Participant(participant) => self.participant = participant,
                     Event::Metrics(line) => self.metrics_line = line,
@@ -241,7 +267,7 @@ impl App {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                        self.start_share();
+                        self.start_share(ctx.clone());
                     }
                 }
                 Action::Stop => self.stop(),
@@ -444,7 +470,7 @@ impl App {
             )
             .clicked()
         {
-            self.start_share();
+            self.start_share(ctx.clone());
         }
         ui.add_space(8.0);
         ui.label(
@@ -460,7 +486,7 @@ impl App {
             )
             .clicked()
         {
-            self.start_watch();
+            self.start_watch(ctx.clone());
         }
         ui.add_space(8.0);
         if ui.button("Rodar demonstração local (sem rede)").clicked() {
@@ -486,16 +512,10 @@ impl App {
                 ctx.copy_text(token);
             }
             ui.add_space(6.0);
-            ui.label(
-                RichText::new(session::TRANSPORT_UNAVAILABLE)
-                    .size(12.5)
-                    .color(MUTED),
-            );
-            ui.add_space(6.0);
         }
-        if self.watching {
+        if self.watching && self.participant.is_empty() {
             ui.label(
-                RichText::new(session::TRANSPORT_UNAVAILABLE)
+                RichText::new("Conectando… o caminho (direto/relay) aparece acima quando medido.")
                     .size(12.5)
                     .color(MUTED),
             );
@@ -568,6 +588,8 @@ impl App {
                 .text("bitrate (bps)"),
         );
         ui.add(egui::Slider::new(&mut self.options.demo_secs, 1..=60).text("demonstração (s)"));
+        ui.label("Mapa DERP alternativo (vazio = padrão do worker)");
+        ui.text_edit_singleline(&mut self.options.derp_map);
         ui.small(format!(
             "Alvo: {}x{} · {} fps",
             self.options.params.width, self.options.params.height, self.options.params.fps

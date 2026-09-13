@@ -22,21 +22,23 @@ use crate::{
     media::MediaPipeline,
     metrics::{Metrics, PathKind, Sample},
     protocol::{Control, FrameDecoder, PROTOCOL_VERSION, Reassembler, VideoParams, encode_control},
-    transport::{self, LoopbackEndpoint, loopback_pair},
+    transport::{
+        self, LoopbackEndpoint, loopback_pair,
+        tailcat::{self, WorkerEvent, WorkerRx, WorkerTx},
+    },
 };
 
-pub const TRANSPORT_UNAVAILABLE: &str = "Transporte P2P real ainda em validação (gate Tailcat/GStreamer pendente). Use Demonstração local ou Diagnóstico.";
-
-/// Fail-closed error for any remote-connect attempt until the gate passes.
-pub fn remote_transport_error() -> anyhow::Error {
-    anyhow::anyhow!(TRANSPORT_UNAVAILABLE)
-}
+pub const DEFAULT_TCP_PORT: u16 = 4106;
+pub const DEFAULT_UDP_PORT: u16 = 4107;
 
 #[derive(Debug, Clone)]
 pub struct Options {
     pub params: VideoParams,
     pub demo_secs: u64,
     pub source_id: String,
+    pub derp_map: String,
+    pub tcp_port: u16,
+    pub udp_port: u16,
 }
 
 impl Default for Options {
@@ -45,6 +47,9 @@ impl Default for Options {
             params: VideoParams::default(),
             demo_secs: 10,
             source_id: "synthetic-720p30".into(),
+            derp_map: String::new(),
+            tcp_port: DEFAULT_TCP_PORT,
+            udp_port: DEFAULT_UDP_PORT,
         }
     }
 }
@@ -61,6 +66,17 @@ impl Options {
             !self.source_id.is_empty() && self.source_id.len() <= 128,
             "fonte inválida"
         );
+        ensure!(self.derp_map.len() <= 512, "URL do mapa DERP grande demais");
+        if !self.derp_map.is_empty() {
+            ensure!(
+                self.derp_map.starts_with("https://") || self.derp_map.starts_with("http://"),
+                "mapa DERP deve ser http(s)"
+            );
+        }
+        ensure!(
+            self.tcp_port > 0 && self.udp_port > 0 && self.tcp_port != self.udp_port,
+            "portas de transporte inválidas"
+        );
         Ok(())
     }
 }
@@ -68,7 +84,12 @@ impl Options {
 #[derive(Debug, Clone)]
 pub enum Event {
     Status(String),
-    InviteReady { redacted: String },
+    InviteReady {
+        redacted: String,
+    },
+    /// Full bearer token for the sender to copy. NEVER logged: the UI prints
+    /// it only in the copy field, the CLI prints it once to stdout.
+    InviteToken(String),
     Participant(String),
     Metrics(String),
     Finished,
@@ -197,20 +218,6 @@ fn data_dir() -> Result<std::path::PathBuf> {
     let dirs = ProjectDirs::from("", "", "relayhop")
         .context("não foi possível localizar os diretórios do usuário")?;
     Ok(dirs.data_local_dir().to_path_buf())
-}
-
-/// Create a room invite offline (no network). The full token goes to the
-/// caller; only the redacted form is emitted in events.
-pub fn prepare_host(options: &Options, now: u64) -> Result<(Invite, RoomState)> {
-    options.validate()?;
-    let invite = Invite::create(now, DEFAULT_INVITE_TTL_SECS);
-    let state = RoomState::Idle.begin()?.peer_wait()?;
-    Ok((invite, state))
-}
-
-/// Validate an invite token offline (no network, no media yet).
-pub fn preview_watch(token: &str, now: u64) -> Result<Invite> {
-    Invite::decode(token.trim(), now)
 }
 
 /// Control handshake over a reliable ordered channel: Welcome then Hello.
@@ -533,6 +540,505 @@ pub async fn diagnose() -> Result<String> {
     Ok(lines.join("\n"))
 }
 
+/// Cancellable await: every network wait competes with `stop`.
+async fn cancel_aware<T>(
+    stop: &CancellationToken,
+    fut: impl std::future::Future<Output = T>,
+) -> Result<T> {
+    tokio::select! {
+        biased;
+        _ = stop.cancelled() => bail!("encerrado"),
+        out = fut => Ok(out),
+    }
+}
+
+async fn wait_worker_event(
+    events: &mut tokio::sync::mpsc::Receiver<WorkerEvent>,
+    stop: &CancellationToken,
+    secs: u64,
+    what: &str,
+) -> Result<WorkerEvent> {
+    let event = cancel_aware(stop, timeout(Duration::from_secs(secs), events.recv()))
+        .await?
+        .with_context(|| format!("{what} excedeu o prazo"))?
+        .context("worker encerrou")?;
+    match &event {
+        WorkerEvent::Closed { reason } => bail!("worker encerrou: {reason}"),
+        WorkerEvent::Error(error) => bail!("worker: {error}"),
+        _ => Ok(event),
+    }
+}
+
+/// Read stream chunks until at least one control message decodes.
+/// Returns all messages decoded from the latest chunk (a TCP segment can
+/// coalesce Hello + Link); callers must process every item.
+async fn next_control(
+    control: &mut tokio::sync::mpsc::Receiver<Vec<u8>>,
+    decoder: &mut FrameDecoder,
+    stop: &CancellationToken,
+) -> Result<Vec<Control>> {
+    loop {
+        let chunk = cancel_aware(stop, timeout(Duration::from_secs(30), control.recv()))
+            .await?
+            .context("leitura de controle excedeu o prazo")?
+            .context("controle encerrado")?;
+        let messages: Vec<Control> = decoder
+            .push(&chunk)?
+            .into_iter()
+            .map(|message| match message {
+                Control::Bye { reason } => Err(anyhow::anyhow!("encerrado pelo par: {reason}")),
+                other => Ok(other),
+            })
+            .collect::<Result<_>>()?;
+        if !messages.is_empty() {
+            return Ok(messages);
+        }
+    }
+}
+
+/// Remote host: serve over Tailcat, publish an invite carrying the rendezvous
+/// address, handshake, then stream synthetic media until stopped.
+pub async fn run_host(
+    options: Options,
+    controls: Controls,
+    events: std::sync::mpsc::Sender<Event>,
+) -> Result<DemoReport> {
+    let _lock = lock_instance()?;
+    options.validate()?;
+    let send = |event: Event| {
+        let _ = events.send(event);
+    };
+    let mut room = RoomState::Idle.begin()?.peer_wait()?;
+    send(Event::Status("Iniciando transporte P2P…".into()));
+    let worker = cancel_aware(
+        &controls.stop,
+        tailcat::Worker::serve(
+            options.tcp_port,
+            options.udp_port,
+            &options.derp_map,
+            &controls.stop,
+        ),
+    )
+    .await??;
+    let (mut tx, rx) = worker.split();
+    let result = run_host_inner(
+        options,
+        controls.clone(),
+        events.clone(),
+        &mut tx,
+        rx,
+        &mut room,
+    )
+    .await;
+    // Graceful worker shutdown (F_CLOSE + EOF + wait); drop kills on failure.
+    let _ = tx.stop().await;
+    send(Event::Participant(
+        ParticipantState::Closing.describe().into(),
+    ));
+    let report = result?;
+    send(Event::Participant(
+        ParticipantState::Closed.describe().into(),
+    ));
+    Ok(report)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_host_inner(
+    options: Options,
+    controls: Controls,
+    events: std::sync::mpsc::Sender<Event>,
+    tx: &mut WorkerTx,
+    rx: WorkerRx,
+    room: &mut RoomState,
+) -> Result<DemoReport> {
+    let WorkerRx {
+        mut control_rx,
+        media_rx: _,
+        events: mut worker_events,
+    } = rx;
+    let send = |event: Event| {
+        let _ = events.send(event);
+    };
+    let addr = match wait_worker_event(
+        &mut worker_events,
+        &controls.stop,
+        tailcat::READY_TIMEOUT_SECS,
+        "transporte",
+    )
+    .await?
+    {
+        WorkerEvent::Ready { addr } => addr,
+        _ => bail!("transporte não ficou pronto"),
+    };
+    let invite = Invite::create(now_secs(), DEFAULT_INVITE_TTL_SECS).with_transport(&addr)?;
+    // The full token is bearer-secret: exactly one event carries it, and no
+    // log/status line ever prints it (see InviteToken docs).
+    send(Event::InviteReady {
+        redacted: invite.redacted(),
+    });
+    send(Event::InviteToken(invite.encode()));
+    send(Event::Status(format!(
+        "Sala aberta (expira em ~{} min). Envie o convite ao espectador.",
+        invite.expires_at().saturating_sub(now_secs()) / 60
+    )));
+    loop {
+        match wait_worker_event(
+            &mut worker_events,
+            &controls.stop,
+            tailcat::PEER_TIMEOUT_SECS,
+            "espectador",
+        )
+        .await?
+        {
+            WorkerEvent::Peer => break,
+            WorkerEvent::Path(_) => continue,
+            _ => bail!("transporte não conectou"),
+        }
+    }
+    send(Event::Participant(
+        ParticipantState::Authenticating.describe().into(),
+    ));
+    tx.send_control(&encode_control(&Control::Welcome {
+        version: PROTOCOL_VERSION,
+        params: options.params,
+    })?)
+    .await?;
+    // Expect Hello, then Link (viewer reports its observed path).
+    let mut decoder = FrameDecoder::new();
+    let handshake_end = Instant::now() + Duration::from_secs(90);
+    let mut peer_path = loop {
+        ensure!(Instant::now() < handshake_end, "handshake excedeu o prazo");
+        let mut found = None;
+        for message in next_control(&mut control_rx, &mut decoder, &controls.stop).await? {
+            match message {
+                Control::Hello {
+                    version,
+                    room: label,
+                } => {
+                    ensure!(
+                        version == PROTOCOL_VERSION,
+                        "versão de protocolo desconhecida"
+                    );
+                    ensure!(
+                        label == invite.redacted(),
+                        "sala divergente na autenticação"
+                    );
+                }
+                Control::Link { path } => {
+                    found = Some(path);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        if let Some(path) = found {
+            break path;
+        }
+    };
+    if *room == RoomState::Waiting {
+        *room = room.start_streaming()?;
+    }
+    send(Event::Participant(
+        ParticipantState::Active(peer_path).describe().into(),
+    ));
+
+    let mut pipeline = MediaPipeline::new(options.params)?;
+    let mut metrics = Metrics::new();
+    let tick = pipeline.frame_interval().max(Duration::from_millis(5));
+    let mut ticker = interval(tick);
+    let start = Instant::now();
+    let mut last_metrics = Instant::now();
+    let mut decoder = FrameDecoder::new();
+    loop {
+        tokio::select! {
+            biased;
+            _ = controls.stop.cancelled() => break,
+            event = worker_events.recv() => {
+                match event {
+                    Some(WorkerEvent::Path(path)) => {
+                        peer_path = path;
+                        send(Event::Participant(ParticipantState::Active(path).describe().into()));
+                    }
+                    Some(WorkerEvent::Closed { reason }) => bail!("worker encerrou: {reason}"),
+                    Some(WorkerEvent::Error(error)) => bail!("worker: {error}"),
+                    None => bail!("worker encerrou"),
+                    _ => {}
+                }
+            }
+            chunk = control_rx.recv() => {
+                let Some(chunk) = chunk else { bail!("controle encerrado") };
+                for message in decoder.push(&chunk)? {
+                    match message {
+                        Control::Bye { reason } => bail!("encerrado pelo par: {reason}"),
+                        Control::Link { path } => {
+                            peer_path = path;
+                            send(Event::Participant(ParticipantState::Active(path).describe().into()));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ = ticker.tick() => {
+                if controls.stop_sharing.is_cancelled() {
+                    if *room == RoomState::Streaming {
+                        *room = room.stop_capture()?;
+                    }
+                    let _ = tx.send_control(&encode_control(&Control::Bye { reason: "captura parada".into() })?).await;
+                    send(Event::Participant("captura parada pelo transmissor".into()));
+                    break;
+                }
+                if let Some(datagrams) = pipeline.try_next_datagrams(0)? {
+                    for datagram in datagrams {
+                        tx.send_media(&datagram).await?;
+                    }
+                }
+                if last_metrics.elapsed() >= Duration::from_millis(500) {
+                    last_metrics = Instant::now();
+                    let elapsed_ms = start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+                    metrics.push(Sample {
+                        elapsed_ms,
+                        bitrate_bps: estimate_bitrate_bps(pipeline.sent_bytes, elapsed_ms),
+                        fps: options.params.fps,
+                        rtt_ms: 0,
+                        path: peer_path,
+                        dropped_frames: pipeline.dropped_frames as u32,
+                    });
+                    send(Event::Metrics(metrics.latest_line()));
+                }
+            }
+        }
+    }
+    let _ = tx
+        .send_control(&encode_control(&Control::Bye {
+            reason: "sessão encerrada".into(),
+        })?)
+        .await;
+    *room = room.finish()?;
+    let report = DemoReport {
+        frames: pipeline.sent_frames,
+        reassembled: 0,
+        dropped_transport: 0,
+        dropped_pipeline: pipeline.dropped_frames,
+        tx_bytes: pipeline.sent_bytes,
+        rx_bytes: 0,
+        avg_bitrate_bps: metrics.avg_bitrate_bps(),
+        metric_samples: metrics.len(),
+        cancelled: controls.stop.is_cancelled(),
+    };
+    // Graceful worker shutdown (F_CLOSE + EOF + wait); drop kills on failure.
+    let _ = tx.stop().await;
+    Ok(report)
+}
+
+/// Remote watch: dial the invite's transport address, handshake, receive and
+/// reassemble media until stopped or the host ends the session.
+pub async fn run_watch(
+    token: &str,
+    options: Options,
+    controls: Controls,
+    events: std::sync::mpsc::Sender<Event>,
+) -> Result<DemoReport> {
+    let _lock = lock_instance()?;
+    options.validate()?;
+    let send = |event: Event| {
+        let _ = events.send(event);
+    };
+    send(Event::Participant(
+        ParticipantState::ValidatingInvite.describe().into(),
+    ));
+    let invite = Invite::decode(token.trim(), now_secs())?;
+    let addr = invite.transport().context(
+        "Este convite não tem endereço de transporte (gerado antes do modo P2P). Gere um novo convite.",
+    )?;
+    send(Event::Participant(
+        ParticipantState::Rendezvous.describe().into(),
+    ));
+    let worker = cancel_aware(
+        &controls.stop,
+        tailcat::Worker::join(
+            addr,
+            options.tcp_port,
+            options.udp_port,
+            &options.derp_map,
+            &controls.stop,
+        ),
+    )
+    .await??;
+    let (mut tx, rx) = worker.split();
+    let result = run_watch_inner(
+        options,
+        controls.clone(),
+        events.clone(),
+        &mut tx,
+        rx,
+        &invite,
+    )
+    .await;
+    // Graceful worker shutdown (F_CLOSE + EOF + wait); drop kills on failure.
+    let _ = tx.stop().await;
+    send(Event::Participant(
+        ParticipantState::Closing.describe().into(),
+    ));
+    let report = result?;
+    send(Event::Participant(
+        ParticipantState::Closed.describe().into(),
+    ));
+    Ok(report)
+}
+
+async fn run_watch_inner(
+    _options: Options,
+    controls: Controls,
+    events: std::sync::mpsc::Sender<Event>,
+    tx: &mut WorkerTx,
+    rx: WorkerRx,
+    invite: &Invite,
+) -> Result<DemoReport> {
+    let WorkerRx {
+        mut control_rx,
+        mut media_rx,
+        events: mut worker_events,
+    } = rx;
+    let send = |event: Event| {
+        let _ = events.send(event);
+    };
+    loop {
+        match wait_worker_event(
+            &mut worker_events,
+            &controls.stop,
+            tailcat::PEER_TIMEOUT_SECS,
+            "conexão",
+        )
+        .await?
+        {
+            WorkerEvent::Peer => break,
+            WorkerEvent::Path(_) => continue,
+            _ => bail!("transporte não conectou"),
+        }
+    }
+    send(Event::Participant(
+        ParticipantState::Authenticating.describe().into(),
+    ));
+    let mut decoder = FrameDecoder::new();
+    let params = loop {
+        let mut found = None;
+        for message in next_control(&mut control_rx, &mut decoder, &controls.stop).await? {
+            if let Control::Welcome { version, params } = message {
+                ensure!(
+                    version == PROTOCOL_VERSION,
+                    "versão de protocolo desconhecida"
+                );
+                params.validate()?;
+                found = Some(params);
+                break;
+            }
+        }
+        if let Some(params) = found {
+            break params;
+        }
+    };
+    params.validate()?;
+    params.validate()?;
+    tx.send_control(&encode_control(&Control::Hello {
+        version: PROTOCOL_VERSION,
+        room: invite.redacted(),
+    })?)
+    .await?;
+    // Report our observed path immediately (Unknown at first), then again
+    // whenever the worker refines it. The host displays the latest Link.
+    let mut own_path = PathKind::Unknown;
+    tx.send_control(&encode_control(&Control::Link { path: own_path })?)
+        .await?;
+    send(Event::Participant(
+        ParticipantState::Probing.describe().into(),
+    ));
+    send(Event::Participant(
+        ParticipantState::Active(own_path).describe().into(),
+    ));
+
+    let mut reassembler = Reassembler::new();
+    let mut metrics = Metrics::new();
+    let start = Instant::now();
+    let mut frames = 0u64;
+    let mut rx_bytes = 0u64;
+    let mut last_metrics = Instant::now();
+    let mut decoder = FrameDecoder::new();
+    loop {
+        tokio::select! {
+            biased;
+            _ = controls.stop.cancelled() => {
+                let _ = tx.send_control(&encode_control(&Control::Bye { reason: "espectador saiu".into() })?).await;
+                break;
+            }
+            event = worker_events.recv() => {
+                match event {
+                    Some(WorkerEvent::Path(path)) => {
+                        own_path = path;
+                        let _ = tx.send_control(&encode_control(&Control::Link { path })?).await;
+                        send(Event::Participant(ParticipantState::Active(path).describe().into()));
+                    }
+                    Some(WorkerEvent::Closed { reason }) => bail!("worker encerrou: {reason}"),
+                    Some(WorkerEvent::Error(error)) => bail!("worker: {error}"),
+                    None => bail!("worker encerrou"),
+                    _ => {}
+                }
+            }
+            chunk = control_rx.recv() => {
+                let Some(chunk) = chunk else { bail!("controle encerrado") };
+                for message in decoder.push(&chunk)? {
+                    if let Control::Bye { .. } = message {
+                        send(Event::Status("Transmissor encerrou a sessão.".into()));
+                        return finish_watch(metrics, reassembler, frames, rx_bytes, &controls);
+                    }
+                }
+            }
+            datagram = media_rx.recv() => {
+                let Some(bytes) = datagram else { break };
+                rx_bytes += bytes.len() as u64;
+                let packet = crate::protocol::MediaPacket::decode(&bytes)?;
+                if let Some(frame) = reassembler.insert(packet)? {
+                    frames += 1;
+                    std::hint::black_box(frame.payload.len());
+                }
+                if last_metrics.elapsed() >= Duration::from_millis(500) {
+                    last_metrics = Instant::now();
+                    let elapsed_ms = start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+                    metrics.push(Sample {
+                        elapsed_ms,
+                        bitrate_bps: estimate_bitrate_bps(rx_bytes, elapsed_ms),
+                        fps: params.fps,
+                        rtt_ms: 0,
+                        path: own_path,
+                        dropped_frames: 0,
+                    });
+                    send(Event::Metrics(metrics.latest_line()));
+                }
+            }
+        }
+    }
+    finish_watch(metrics, reassembler, frames, rx_bytes, &controls)
+}
+
+fn finish_watch(
+    metrics: Metrics,
+    reassembler: Reassembler,
+    frames: u64,
+    rx_bytes: u64,
+    controls: &Controls,
+) -> Result<DemoReport> {
+    Ok(DemoReport {
+        frames,
+        reassembled: reassembler.completed(),
+        dropped_transport: reassembler.dropped(),
+        dropped_pipeline: 0,
+        tx_bytes: 0,
+        rx_bytes,
+        avg_bitrate_bps: metrics.avg_bitrate_bps(),
+        metric_samples: metrics.len(),
+        cancelled: controls.stop.is_cancelled(),
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DemoReport {
     pub frames: u64,
@@ -583,21 +1089,13 @@ mod tests {
     }
 
     #[test]
-    fn host_preview_roundtrip_offline() -> Result<()> {
-        let options = Options::default();
-        let (invite, state) = prepare_host(&options, 1_700_000_000)?;
-        assert_eq!(state, RoomState::Waiting);
-        assert!(!invite.is_expired(1_700_000_000));
-        let token = invite.encode();
-        let parsed = preview_watch(&token, 1_700_000_000)?;
-        assert_eq!(parsed.redacted(), invite.redacted());
-        Ok(())
-    }
-
-    #[test]
-    fn remote_watch_fails_closed_with_actionable_error() {
-        let error = remote_transport_error();
-        assert!(format!("{error:#}").contains("Demonstração local"));
+    fn invite_without_transport_fails_closed_for_remote_watch() {
+        // Offline invites carry no rendezvous address; run_watch rejects them
+        // before spawning anything (fail fast, no worker, no network).
+        let token = Invite::create(1_700_000_000, DEFAULT_INVITE_TTL_SECS).encode();
+        let parsed = Invite::decode(&token, 1_700_000_000).expect("convite válido");
+        assert!(parsed.transport().is_none());
+        assert!(!parsed.is_expired(1_700_000_000));
     }
 
     #[tokio::test]

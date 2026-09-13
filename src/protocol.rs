@@ -4,6 +4,8 @@
 //! Media runs as unreliable datagrams (Tailcat UDP budget: 1232 bytes each).
 //! Every decode validates sizes before allocating.
 
+use crate::metrics::PathKind;
+
 use anyhow::{Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
@@ -72,13 +74,33 @@ impl Default for VideoParams {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum Control {
-    Hello { version: u16, room: String },
-    Welcome { version: u16, params: VideoParams },
-    KeyframeRequest { seq: u32 },
-    Bitrate { bps: u32 },
-    Ping { id: u32 },
-    Pong { id: u32 },
-    Bye { reason: String },
+    Hello {
+        version: u16,
+        room: String,
+    },
+    Welcome {
+        version: u16,
+        params: VideoParams,
+    },
+    KeyframeRequest {
+        seq: u32,
+    },
+    Bitrate {
+        bps: u32,
+    },
+    Ping {
+        id: u32,
+    },
+    Pong {
+        id: u32,
+    },
+    /// Viewer reports the transport path it observes (for the host UI).
+    Link {
+        path: PathKind,
+    },
+    Bye {
+        reason: String,
+    },
 }
 
 impl Control {
@@ -103,6 +125,7 @@ impl Control {
                 ensure!((50_000..=20_000_000).contains(bps), "bitrate inválido");
             }
             Self::Ping { .. } | Self::Pong { .. } => {}
+            Self::Link { .. } => {}
             Self::Bye { reason } => {
                 ensure!(!reason.is_empty() && reason.len() <= 256, "motivo inválido");
             }
