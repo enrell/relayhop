@@ -6,8 +6,8 @@ use eframe::egui;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     Show,
-    Start,
-    Direct,
+    Share,
+    Stop,
     Quit,
     /// SNI watcher went away (ksni/Linux only): keep the window visible.
     #[cfg(target_os = "linux")]
@@ -20,42 +20,42 @@ pub enum Action {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {
     pub label: &'static str,
-    pub can_start: bool,
-    pub can_direct: bool,
+    pub can_share: bool,
+    pub can_stop: bool,
 }
 
 /// Short tray/menu label derived from the session phase. The full status
 /// message stays in the window; the tray only mirrors the phase.
-pub fn state_for(active: bool, warming: bool, direct: bool, error: bool) -> State {
+pub fn state_for(active: bool, sharing: bool, watching: bool, error: bool) -> State {
     if error {
         State {
             label: "Erro — abra o RelayHop",
-            can_start: true,
-            can_direct: false,
+            can_share: true,
+            can_stop: false,
         }
-    } else if direct {
+    } else if sharing {
         State {
-            label: "Conexão direta",
-            can_start: false,
-            can_direct: false,
+            label: "Compartilhando tela",
+            can_share: false,
+            can_stop: true,
         }
-    } else if warming {
+    } else if watching {
         State {
-            label: "Pelo Tor — aguarde carregar",
-            can_start: false,
-            can_direct: true,
+            label: "Assistindo",
+            can_share: false,
+            can_stop: true,
         }
     } else if active {
         State {
-            label: "Conectando…",
-            can_start: false,
-            can_direct: false,
+            label: "Preparando…",
+            can_share: false,
+            can_stop: true,
         }
     } else {
         State {
             label: "Pronto",
-            can_start: true,
-            can_direct: false,
+            can_share: true,
+            can_stop: false,
         }
     }
 }
@@ -134,16 +134,16 @@ mod platform {
                 }
                 .into(),
                 StandardItem {
-                    label: "Abrir Discord".into(),
-                    enabled: self.state.can_start,
-                    activate: Box::new(|this: &mut Self| (this.dispatch)(Action::Start)),
+                    label: "Compartilhar tela".into(),
+                    enabled: self.state.can_share,
+                    activate: Box::new(|this: &mut Self| (this.dispatch)(Action::Share)),
                     ..Default::default()
                 }
                 .into(),
                 StandardItem {
-                    label: "Usar conexão direta".into(),
-                    enabled: self.state.can_direct,
-                    activate: Box::new(|this: &mut Self| (this.dispatch)(Action::Direct)),
+                    label: "Parar compartilhamento".into(),
+                    enabled: self.state.can_stop,
+                    activate: Box::new(|this: &mut Self| (this.dispatch)(Action::Stop)),
                     ..Default::default()
                 }
                 .into(),
@@ -188,23 +188,23 @@ mod platform {
     pub struct Tray {
         icon: TrayIcon,
         status: MenuItem,
-        start: MenuItem,
-        direct: MenuItem,
+        share: MenuItem,
+        stop: MenuItem,
     }
     impl Tray {
         pub fn new(state: State, dispatch: Dispatch) -> anyhow::Result<Self> {
             let menu = Menu::new();
             let status = MenuItem::new(state.label, false, None);
             let show = MenuItem::with_id("show", "Mostrar RelayHop", true, None);
-            let start = MenuItem::with_id("start", "Abrir Discord", state.can_start, None);
-            let direct = MenuItem::with_id("direct", "Usar conexão direta", state.can_direct, None);
+            let share = MenuItem::with_id("share", "Compartilhar tela", state.can_share, None);
+            let stop = MenuItem::with_id("stop", "Parar compartilhamento", state.can_stop, None);
             let quit = MenuItem::with_id("quit", "Sair do RelayHop", true, None);
             menu.append_items(&[
                 &status,
                 &PredefinedMenuItem::separator(),
                 &show,
-                &start,
-                &direct,
+                &share,
+                &stop,
                 &PredefinedMenuItem::separator(),
                 &quit,
             ])?;
@@ -224,8 +224,8 @@ mod platform {
             MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
                 let action = match event.id.as_ref() {
                     "show" => Action::Show,
-                    "start" => Action::Start,
-                    "direct" => Action::Direct,
+                    "share" => Action::Share,
+                    "stop" => Action::Stop,
                     "quit" => Action::Quit,
                     _ => return,
                 };
@@ -245,14 +245,14 @@ mod platform {
             Ok(Self {
                 icon,
                 status,
-                start,
-                direct,
+                share,
+                stop,
             })
         }
         pub fn update(&self, state: State) {
             self.status.set_text(state.label);
-            self.start.set_enabled(state.can_start);
-            self.direct.set_enabled(state.can_direct);
+            self.share.set_enabled(state.can_share);
+            self.stop.set_enabled(state.can_stop);
             let _ = self
                 .icon
                 .set_tooltip(Some(format!("RelayHop — {}", state.label)));
@@ -295,40 +295,40 @@ mod tests {
             state_for(false, false, false, false),
             State {
                 label: "Pronto",
-                can_start: true,
-                can_direct: false
+                can_share: true,
+                can_stop: false
             }
         );
         assert_eq!(
             state_for(true, false, false, false),
             State {
-                label: "Conectando…",
-                can_start: false,
-                can_direct: false
+                label: "Preparando…",
+                can_share: false,
+                can_stop: true
             }
         );
         assert_eq!(
             state_for(true, true, false, false),
             State {
-                label: "Pelo Tor — aguarde carregar",
-                can_start: false,
-                can_direct: true
+                label: "Compartilhando tela",
+                can_share: false,
+                can_stop: true
             }
         );
         assert_eq!(
             state_for(true, false, true, false),
             State {
-                label: "Conexão direta",
-                can_start: false,
-                can_direct: false
+                label: "Assistindo",
+                can_share: false,
+                can_stop: true
             }
         );
         assert_eq!(
             state_for(false, false, false, true),
             State {
                 label: "Erro — abra o RelayHop",
-                can_start: true,
-                can_direct: false
+                can_share: true,
+                can_stop: false
             }
         );
     }

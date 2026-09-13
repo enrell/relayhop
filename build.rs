@@ -26,7 +26,7 @@ fn main() {
         winresource::WindowsResource::new()
             .set_icon(icon_path.to_str().unwrap())
             .set("ProductName", "RelayHop")
-            .set("FileDescription", "RelayHop — Discord launcher")
+            .set("FileDescription", "RelayHop — P2P screen sharing")
             .compile()
             .expect("compile Windows icon resource");
     }

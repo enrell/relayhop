@@ -52,7 +52,7 @@ try {
     $link = $shell.CreateShortcut($shortcut)
     $link.TargetPath = Join-Path $InstallDir "relayhop.exe"
     $link.WorkingDirectory = $InstallDir
-    $link.Description = "RelayHop — salto temporário pelo Tor para abrir o Discord"
+    $link.Description = "RelayHop — compartilhamento de tela P2P"
     $link.Save()
 
     Write-Host ""

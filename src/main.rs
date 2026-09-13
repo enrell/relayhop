@@ -1,52 +1,52 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-mod discord;
+mod display;
 mod icon;
-mod proxy;
+mod invite;
+mod media;
+mod metrics;
+mod protocol;
 mod session;
-mod tor;
+mod transport;
 mod tray;
 mod ui;
 
-use std::{path::PathBuf, sync::mpsc};
+use std::sync::mpsc;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(
-    version,
-    about = "RelayHop — um salto temporário pelo Tor para abrir o Discord"
-)]
+#[command(version, about = "RelayHop — compartilhamento de tela P2P")]
 struct Cli {
     /// Iniciar sem interface gráfica; mantenha o terminal aberto.
     #[arg(long)]
     headless: bool,
-    /// País de saída Tor (GeoIP); não pode ser BR.
-    #[arg(long, default_value = "US", value_parser = tor::country)]
-    country: String,
-    /// Segundos até voltar à conexão direta, contados da primeira conexão.
-    #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(10..=600))]
-    warmup_secs: u64,
-    /// Só trocar para conexão direta ao clicar no botão (ou ENTER no terminal).
-    #[arg(long)]
-    manual: bool,
-    /// Caminho explícito do executável ou launcher do Discord.
-    #[arg(long)]
-    discord: Option<PathBuf>,
     #[command(subcommand)]
-    command: Option<Internal>,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
-enum Internal {
-    #[command(hide = true)]
-    TorWorker {
-        #[arg(long, value_parser = tor::country)]
-        country: String,
+enum Command {
+    /// Criar um convite e aguardar o espectador (transporte real pendente do gate).
+    Host {
+        /// Fonte de captura (somente sintética até o gate de mídia).
+        #[arg(long, default_value = "synthetic-720p30")]
+        source: String,
     },
-    /// Testar Tor → conexão direta com HTTPS, sem abrir o Discord.
-    Check,
+    /// Validar um convite (conexão remota pendente do gate).
+    Watch {
+        /// Convite `rh1.…` recebido do transmissor.
+        invite: String,
+    },
+    /// Demonstração local ponta a ponta, sem rede pública.
+    LocalDemo {
+        /// Duração em segundos (1..=60).
+        #[arg(long, default_value_t = 10)]
+        secs: u64,
+    },
+    /// Diagnóstico local: protocolo, convite, loopback e binário Tailcat.
+    Diag,
 }
 
 fn runtime() -> Result<tokio::runtime::Runtime> {
@@ -61,9 +61,8 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
 /// whenever WAYLAND_DISPLAY/WAYLAND_SOCKET is set, but it cannot hide
 /// (Visible(false)) or un-minimize windows on Wayland, and Hyprland also
 /// ignores minimize requests — so hide-to-tray cannot work there.
-/// XWayland honors both, making Super+W/fechar actually collapse to the tray.
-/// The stripped variables are saved for the Discord child (see
-/// discord::preserve_display_env) so Discord keeps its validated environment.
+/// The stripped variables are saved for screen capture (see
+/// display::preserve_display_env) so portals/PipeWire keep the session env.
 /// Set RELAYHOP_WAYLAND=1 to keep native Wayland.
 #[cfg(target_os = "linux")]
 fn prefer_x11_backend() {
@@ -87,7 +86,7 @@ fn prefer_x11_backend() {
         );
         return;
     }
-    crate::discord::preserve_display_env(&WAYLAND_VARS);
+    crate::display::preserve_display_env(&WAYLAND_VARS);
     // SAFETY: runs at startup before any thread spawns.
     for key in WAYLAND_VARS {
         unsafe { std::env::remove_var(key) };
@@ -101,14 +100,12 @@ fn prefer_x11_backend() {}
 fn main() -> Result<()> {
     prefer_x11_backend();
     #[cfg(windows)]
-    if std::env::args().nth(1).as_deref() != Some("tor-worker") {
+    unsafe {
         // Preserve CLI output when launched from a terminal; Explorer launches
-        // show only the GUI. Never replace the worker's inherited control pipes.
-        unsafe {
-            windows_sys::Win32::System::Console::AttachConsole(
-                windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS,
-            );
-        }
+        // show only the GUI.
+        windows_sys::Win32::System::Console::AttachConsole(
+            windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS,
+        );
     }
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
@@ -120,91 +117,95 @@ fn main() -> Result<()> {
         .init();
     let cli = Cli::parse();
     match cli.command {
-        Some(Internal::TorWorker { country }) => return runtime()?.block_on(tor::worker(&country)),
-        Some(Internal::Check) => return runtime()?.block_on(connectivity_check(&cli.country)),
-        None => {}
-    }
-    let options = session::Options {
-        country: cli.country,
-        warmup_secs: cli.warmup_secs,
-        manual: cli.manual,
-        discord: cli.discord,
-    };
-    if cli.headless {
-        headless(options)
-    } else {
-        ui::run(options)
+        Some(Command::Host { source }) => runtime()?.block_on(host_command(source)),
+        Some(Command::Watch { invite }) => runtime()?.block_on(watch_command(invite)),
+        Some(Command::LocalDemo { secs }) => runtime()?.block_on(local_demo_command(secs)),
+        Some(Command::Diag) => runtime()?.block_on(diag_command()),
+        None => {
+            if cli.headless {
+                runtime()?.block_on(local_demo_command(10))
+            } else {
+                ui::run()
+            }
+        }
     }
 }
 
-async fn connectivity_check(country: &str) -> Result<()> {
+async fn host_command(source: String) -> Result<()> {
     let _lock = session::lock_instance()?;
-    eprintln!("Conectando ao Tor com saída {country}…");
-    let mut worker = tor::Worker::start(country).await?;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-    let address = listener.local_addr()?;
-    let router = proxy::Router::new(
-        std::sync::Arc::new(proxy::SocksUpstream(worker.address)),
-        std::sync::Arc::new(proxy::Direct),
+    let options = session::Options {
+        source_id: source,
+        ..session::Options::default()
+    };
+    options.validate()?;
+    let (invite, _) = session::prepare_host(&options, session::now_secs())?;
+    let valid_mins = invite.expires_at().saturating_sub(session::now_secs()) / 60;
+    println!(
+        "Convite (compartilhe com o espectador): {}",
+        invite.encode()
     );
-    let stop = tokio_util::sync::CancellationToken::new();
-    let server = tokio::spawn(proxy::serve(listener, router.clone(), stop.clone()));
-    let result: Result<()> = async {
-        tor::check_discord(address)
-            .await
-            .context("teste da rota Tor")?;
-        eprintln!("HTTPS pelo Tor: OK. Trocando para conexão direta…");
-        router.switch_direct();
-        worker.stop().await?;
-        tor::check_discord(address)
-            .await
-            .context("teste da rota direta")?;
-        eprintln!("HTTPS direto: OK. Tor encerrado. Isso não verifica a liberação de streaming.");
-        Ok(())
-    }
-    .await;
-    stop.cancel();
-    server.await??;
-    worker.stop().await?;
-    result
+    println!("Sala: {} (expira em ~{valid_mins} min)", invite.redacted());
+    println!(
+        "Aguardando espectador… {}. Mantenha este terminal aberto.",
+        session::TRANSPORT_UNAVAILABLE
+    );
+    tokio::signal::ctrl_c().await?;
+    println!("Sessão encerrada; o convite expirou com a sala.");
+    Ok(())
 }
 
-fn headless(options: session::Options) -> Result<()> {
+async fn watch_command(invite: String) -> Result<()> {
+    let parsed = session::preview_watch(&invite, session::now_secs())?;
+    eprintln!("Convite válido para a sala {}.", parsed.redacted());
+    Err(session::remote_transport_error())
+}
+
+async fn local_demo_command(secs: u64) -> Result<()> {
+    let options = session::Options {
+        demo_secs: secs.clamp(1, 60),
+        ..session::Options::default()
+    };
     let controls = session::Controls::default();
     let (tx, rx) = mpsc::channel();
+    let stop = controls.stop.clone();
     std::thread::spawn(move || {
         for event in rx {
             match event {
-                session::Event::Status(message) => eprintln!("{message}"),
-                session::Event::Warming(deadline) => eprintln!(
-                    "Discord conectado pelo Tor. {} ENTER troca para conexão direta.",
-                    if deadline.is_some() {
-                        "Temporizador iniciado."
-                    } else {
-                        "Modo manual."
-                    }
-                ),
-                session::Event::Direct => eprintln!(
-                    "Conexão direta. Tor encerrado. Mantenha o RelayHop aberto enquanto usa o Discord."
-                ),
-                _ => {}
+                session::Event::Status(message)
+                | session::Event::Participant(message)
+                | session::Event::Metrics(message) => eprintln!("{message}"),
+                session::Event::InviteReady { redacted } => {
+                    eprintln!("Sala local: {redacted}");
+                }
+                session::Event::Finished => eprintln!("Demonstração concluída."),
+                session::Event::Error(message) => eprintln!("Erro: {message}"),
             }
         }
     });
-    let direct = controls.direct.clone();
-    std::thread::spawn(move || {
-        let mut line = String::new();
-        if std::io::stdin().read_line(&mut line).is_ok_and(|n| n > 0) {
-            direct.cancel();
+    let report_stop = stop.clone();
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            report_stop.cancel();
         }
     });
-    let stop = controls.stop.clone();
-    runtime()?.block_on(async move {
-        tokio::spawn(async move {
-            if tokio::signal::ctrl_c().await.is_ok() {
-                stop.cancel();
-            }
-        });
-        session::run(options, controls, tx).await
-    })
+    let report = session::run_local_demo(options, controls, tx).await?;
+    stop.cancel();
+    eprintln!(
+        "Resumo: {} frames ({} remontados), {} enviados/{} recebidos, {} descartes no pipeline/{} no transporte, {} bps médios em {} amostras{}.",
+        report.frames,
+        report.reassembled,
+        report.tx_bytes,
+        report.rx_bytes,
+        report.dropped_pipeline,
+        report.dropped_transport,
+        report.avg_bitrate_bps,
+        report.metric_samples,
+        if report.cancelled { " (cancelado)" } else { "" }
+    );
+    Ok(())
+}
+
+async fn diag_command() -> Result<()> {
+    println!("{}", session::diagnose().await?);
+    Ok(())
 }

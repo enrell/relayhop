@@ -1,46 +1,62 @@
-# Arquitetura
+# Arquitetura (migração P2P, v0.3.0)
 
 ## Componentes
 
 | Módulo | Responsabilidade |
 |---|---|
-| `main.rs` | CLI, runtime e modo de teste de conectividade |
-| `ui.rs` | Interface egui, progresso e controles de sessão |
-| `session.rs` | Lock, bootstrap, teste, abertura, temporizador, monitor e limpeza |
-| `tor.rs` | Worker Arti, restrição GeoIP, controle por pipe e teste HTTPS |
-| `proxy.rs` | Protocolo SOCKS5, política de destinos e transição Tor → direto |
-| `discord.rs` | Descoberta e criação de processos, sem shell |
+| `main.rs` | CLI (`host`, `watch`, `local-demo`, `diag`), runtime e GUI |
+| `ui.rs` | Interface egui: compartilhar, entrar, demonstração e métricas |
+| `session.rs` | Supervisor: salas, participantes, demo local, diagnóstico e limpeza |
+| `protocol.rs` | Controle versionado com framing limitado; packetização de mídia em datagramas ≤1232 B |
+| `invite.rs` | Convites efêmeros `rh1.…` (segredo portador, expiração, forma reduzida para logs) |
+| `transport/` | Par loopback para validação offline; sonda do binário Tailcat externo (gate pendente) |
+| `media/` | Fonte sintética limitada, packetização, plano de captura por plataforma |
+| `metrics.rs` | Amostras locais limitadas (anel de 120), sem telemetria |
+| `display.rs` | Preserva o env de sessão no Linux para captura (portal/PipeWire) |
+| `tray.rs` | ksni no Linux, tray-icon no Windows; ações Compartilhar/Parar/Sair |
+| `icon.rs`, `assets/` | Identidade visual |
+
+O lançador Tor (Arti, SOCKS, flags do Discord) foi removido; o histórico Git o preserva.
 
 ## Estados
 
+Sala:
+
 ```text
-Ocioso → Bootstrap Tor → Teste HTTPS → Abrindo Discord
-    → Primeira conexão → Aquecimento → Direto → Discord encerra → Ocioso
-                         ↑ botão manual / prazo automático
+Ociosa → Preparando → Aguardando → Transmitindo → Parada de captura → Ociosa
+                     └→ Falha (fecha sem vazar captura)
 ```
 
-Falhas são apresentadas com contexto. O aplicativo não anuncia que o streaming está liberado: não inspeciona o estado autenticado do Discord. Se houver falha de inicialização, o usuário fecha a instância do Discord antes de tentar novamente.
+Parar a captura interrompe o envio imediatamente; retomar exige ação explícita. Reconexão nunca reativa captura encerrada pelo usuário.
 
-### Transição
+Participante (por espectador):
 
-O `CancellationToken` do router é o ponto de troca irreversível. Antes dele, cada túnel aguarda em `select!` tanto o transporte quanto a troca. Cancelar o token cancela inclusive tentativas de conexão em andamento. Depois dele, a criação de novos túneis usa `Direct`. O worker é então encerrado e aguardado.
+```text
+Validando convite → Rendezvous → Autenticando → Testando candidatos
+    ├→ Ativo (local / direto IPv6 / direto IPv4 / relay)
+    ├→ Degradado → Recuperando → Ativo / Falha
+    └→ Encerrando → Encerrado (terminal)
+```
 
-Conexões já estabelecidas não migram. Fechar seu transporte reproduz a necessidade de reconexão observada ao retirar uma VPN; a persistência da liberação na sessão é uma propriedade externa do Discord.
+Handshake de controle (`Welcome` → `Hello`, com uma repetição) precede qualquer mídia. Falha fecha sem abrir sockets de mídia sem criptografia.
 
-### Ciclo de vida
+## Transporte
 
-O worker herda apenas stdin/stdout necessários ao protocolo de controle e stderr para diagnóstico. Seu stdout fornece uma única linha limitada com o endereço local depois do bootstrap. O pai mantém stdin aberto; EOF faz o processo filho encerrar mesmo se o runtime async estiver ocupado. `kill_on_drop` é uma proteção adicional. Não usa serviço global ou Tor Browser existente.
+- Hoje: par loopback cruzado com filas limitadas (64 datagramas) para demo, `diag` e testes.
+- Gate pendente: worker Tailcat externo (binário opcional no PATH, sondado com args estruturados, sem shell). Nada de VPN global, exit node ou serviços de shell/arquivos do Tailcat.
+- Orçamento UDP documentado: 1232 bytes por datagrama (cabeçalho de 20 + até 1212 de payload), frames de até 1 MB em no máximo 64 fragmentos, remontador com 8 frames simultâneos.
 
-O encaminhador principal existe durante toda a sessão Discord. Fechar sua janela minimiza; parar o encaminhador explicitamente interrompe as conexões que dependem dele. O monitor de processos tem tolerância de três amostras ausentes. Não tenta terminar processos Discord automaticamente.
+## Mídia
 
-### Política de rede
+Fonte sintética com taxa derivada do bitrate-alvo, keyframes periódicos e descarte sob pressão (fila de 8, nunca cresce memória). Captura real (Windows Graphics Capture, portal ScreenCast + PipeWire) e encode por hardware entram pelo gate da fase 2; `capture_plan()` e o `diag` declaram o pendente.
 
-Nomes autorizados: `discord.com`, `discord.gg`, `discordapp.com`, `discordapp.net`, `discord.media`, `discordcdn.com`, `discordstatus.com`, incluindo subdomínios com fronteira de ponto. Apenas porta 443. Endereços IP literais e nomes malformados são rejeitados.
+## Convites e segurança
 
-Não há inspeção de caminho URL, de TLS ou de mensagens WebSocket. Atualizações do Discord podem introduzir outros destinos ou alterar como o proxy é usado; a lista precisa de manutenção baseada em evidências, sem transformá-la em um proxy aberto.
+- Chaves efêmeras por sala (sala 128 bits, PSK 256 bits, OS RNG), TTL ~15 min.
+- Token completo só na tela do transmissor e no `host`; todo o resto usa a forma reduzida.
+- Validação de tamanho/versão/campos antes de alocar; limites em protocolo, framing, remontagem e controle.
+- Sem criptografia própria: DTLS-SRTP (caminho WebRTC) / WireGuard (caminho Tailcat) quando o gate escolher.
 
 ## Dependências e limites
 
-Arti 0.46 oferece seleção de país como feature `geoip` experimental. A versão e as dependências resolvidas estão no `Cargo.lock`. A base GeoIP embarcada deve ser atualizada com as releases; não há download próprio de listas de saída ou executáveis.
-
-A versão inicial usa runtime Tokio com dois workers e interface egui. Não afirma consumo de memória mínimo: inclui interface gráfica, e o bootstrap Tor mantém diretório/circuitos enquanto está ativo. O subprocesso permite devolver essa memória ao SO após a transição.
+Tokio (runtime), egui/eframe (UI), fs2 (lock), directories, clap, serde/serde_json, base64, rand, tracing. Sem Arti, sem reqwest, sem sysinfo. Rede pública, desktop real e contas Discord ficam fora dos testes automatizados.

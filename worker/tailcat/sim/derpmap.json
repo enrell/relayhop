@@ -1,0 +1,19 @@
+{
+  "Regions": {
+    "1": {
+      "RegionID": 1,
+      "RegionCode": "sim",
+      "Nodes": [
+        {
+          "Name": "sim1",
+          "RegionID": 1,
+          "HostName": "derp.test",
+          "CertName": "derp.test",
+          "IPv4": "203.0.113.10",
+          "DERPPort": 443,
+          "STUNPort": 3478
+        }
+      ]
+    }
+  }
+}

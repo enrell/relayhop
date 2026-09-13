@@ -1,13 +1,16 @@
 use std::{
     sync::mpsc::{self, Receiver, Sender},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use anyhow::Result;
 use eframe::egui::{self, Color32, RichText, Vec2};
 
 use crate::{
-    session::{self, Controls, Event, Options},
+    media,
+    metrics::PathKind,
+    protocol::VideoCodec,
+    session::{self, Controls, Event},
     tray::{self, Action, State as TrayState, Tray},
 };
 
@@ -16,14 +19,14 @@ const TEAL: Color32 = Color32::from_rgb(117, 220, 202);
 const DANGER: Color32 = Color32::from_rgb(255, 150, 145);
 const MUTED: Color32 = Color32::from_rgb(148, 163, 196);
 
-pub fn run(options: Options) -> Result<()> {
+pub fn run() -> Result<()> {
     let native = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_app_id("relayhop")
             .with_title("RelayHop")
             .with_icon(crate::icon::window())
-            .with_inner_size([560.0, 560.0])
-            .with_min_inner_size([500.0, 520.0]),
+            .with_inner_size([580.0, 620.0])
+            .with_min_inner_size([520.0, 560.0]),
         ..Default::default()
     };
     eframe::run_native(
@@ -31,7 +34,7 @@ pub fn run(options: Options) -> Result<()> {
         native,
         Box::new(move |context| {
             context.egui_ctx.set_visuals(dark_visuals());
-            Ok(Box::new(App::new(options)))
+            Ok(Box::new(App::new()))
         }),
     )
     .map_err(|error| anyhow::anyhow!("interface gráfica: {error}"))
@@ -47,15 +50,18 @@ fn dark_visuals() -> egui::Visuals {
 }
 
 struct App {
-    options: Options,
-    path: String,
+    options: session::Options,
+    invite_input: String,
+    current_token: Option<String>,
+    current_redacted: Option<String>,
     events: Option<Receiver<Event>>,
     controls: Controls,
     status: String,
+    participant: String,
+    metrics_line: String,
     active: bool,
-    warming: bool,
-    direct: bool,
-    deadline: Option<Instant>,
+    sharing: bool,
+    watching: bool,
     error: bool,
     brand: Option<egui::TextureHandle>,
     tray: Option<Tray>,
@@ -67,23 +73,22 @@ struct App {
 }
 
 impl App {
-    fn new(options: Options) -> Self {
-        let path = options
-            .discord
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_default();
+    fn new() -> Self {
         let (tray_tx, tray_rx) = mpsc::channel();
         Self {
-            options,
-            path,
+            options: session::Options::default(),
+            invite_input: String::new(),
+            current_token: None,
+            current_redacted: None,
             events: None,
             controls: Controls::default(),
-            status: "Um salto pelo Tor na abertura. Sua conexão normal depois.".into(),
+            status: "Compartilhe sua tela por P2P. O Discord continua só para voz e convites."
+                .into(),
+            participant: String::new(),
+            metrics_line: String::new(),
             active: false,
-            warming: false,
-            direct: false,
-            deadline: None,
+            sharing: false,
+            watching: false,
             error: false,
             brand: None,
             tray: None,
@@ -95,28 +100,99 @@ impl App {
         }
     }
 
-    fn start(&mut self, context: egui::Context) {
+    fn reset_session(&mut self) {
+        self.controls = Controls::default();
+        self.events = None;
+        self.current_token = None;
+        self.current_redacted = None;
+        self.active = false;
+        self.sharing = false;
+        self.watching = false;
+        self.error = false;
+        self.participant.clear();
+        self.metrics_line.clear();
+    }
+
+    fn start_share(&mut self) {
+        self.reset_session();
+        let now = session::now_secs();
+        match session::prepare_host(&self.options, now) {
+            Ok((invite, _)) => {
+                let valid_mins = invite.expires_at().saturating_sub(now) / 60;
+                self.current_redacted = Some(invite.redacted());
+                self.current_token = Some(invite.encode());
+                self.active = true;
+                self.sharing = true;
+                self.status = format!(
+                    "Sala aberta (expira em ~{valid_mins} min). Envie o convite ao espectador pelo Discord."
+                );
+                self.participant = "aguardando participante".into();
+            }
+            Err(error) => {
+                self.error = true;
+                self.status = format!("{error:#}");
+            }
+        }
+    }
+
+    fn start_watch(&mut self) {
+        self.reset_session();
+        match session::preview_watch(&self.invite_input, session::now_secs()) {
+            Ok(invite) => {
+                self.current_redacted = Some(invite.redacted());
+                self.active = true;
+                self.watching = true;
+                self.status = format!(
+                    "Convite válido para {}. Caminho: {}. {}",
+                    invite.redacted(),
+                    PathKind::Unknown.as_str(),
+                    session::TRANSPORT_UNAVAILABLE
+                );
+            }
+            Err(error) => {
+                self.error = true;
+                self.status = format!("Convite inválido: {error:#}");
+            }
+        }
+    }
+
+    fn start_demo(&mut self, context: egui::Context) {
+        self.reset_session();
         self.controls = Controls::default();
         self.active = true;
-        self.warming = false;
-        self.direct = false;
-        self.error = false;
-        self.deadline = None;
-        self.options.discord = (!self.path.trim().is_empty()).then(|| self.path.trim().into());
+        self.sharing = true;
+        self.status = "Demonstração local em andamento (sem rede pública).".into();
         let options = self.options.clone();
         let controls = self.controls.clone();
         let (tx, rx) = mpsc::channel();
         self.events = Some(rx);
         std::thread::spawn(move || {
-            let result = crate::runtime()
-                .and_then(|runtime| runtime.block_on(session::run(options, controls, tx.clone())));
-            let event = match result {
-                Ok(()) => Event::Finished,
-                Err(error) => Event::Error(format!("{error:#}")),
-            };
-            let _ = tx.send(event);
+            let result = crate::runtime().and_then(|runtime| {
+                runtime.block_on(session::run_local_demo(options, controls, tx.clone()))
+            });
+            match result {
+                Ok(_) => {
+                    let _ = tx.send(Event::Finished);
+                }
+                Err(error) => {
+                    let _ = tx.send(Event::Error(format!("{error:#}")));
+                }
+            }
             context.request_repaint();
         });
+    }
+
+    fn stop(&mut self) {
+        self.controls.stop_sharing.cancel();
+        self.controls.stop.cancel();
+        // Offline share/watch states clear immediately; a running demo thread
+        // observes the same cancellation and reports Finished.
+        if self.events.is_none() {
+            self.reset_session();
+            self.status = "Sessão encerrada; o convite expirou com a sala.".into();
+        } else {
+            self.status = "Encerrando demonstração…".into();
+        }
     }
 
     fn receive(&mut self) {
@@ -124,25 +200,26 @@ impl App {
             for event in events.try_iter() {
                 match event {
                     Event::Status(status) => self.status = status,
-                    Event::Warming(deadline) => {
-                        self.warming = true;
-                        self.deadline = deadline;
-                        self.status =
-                            "Discord conectado pelo Tor. Aguarde a tela inicial carregar.".into();
+                    Event::InviteReady { redacted } => {
+                        self.current_redacted = Some(redacted);
                     }
-                    Event::Direct => {
-                        self.direct = true;
-                        self.warming = false;
-                        self.status = "Conexão direta ativa. O cliente Tor foi encerrado.".into();
-                    }
+                    Event::Participant(participant) => self.participant = participant,
+                    Event::Metrics(line) => self.metrics_line = line,
                     Event::Finished => {
                         self.active = false;
-                        self.warming = false;
-                        self.status = "Sessão encerrada.".into();
+                        self.sharing = false;
+                        self.watching = false;
+                        if self.status.starts_with("Demonstração local")
+                            || self.status.starts_with("Encerrando")
+                            || self.status.starts_with("Preparando")
+                        {
+                            self.status = "Demonstração concluída.".into();
+                        }
                     }
                     Event::Error(error) => {
                         self.active = false;
-                        self.warming = false;
+                        self.sharing = false;
+                        self.watching = false;
                         self.error = true;
                         self.status = error;
                     }
@@ -159,23 +236,23 @@ impl App {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 }
-                Action::Start => {
+                Action::Share => {
                     if !self.active {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                        self.start(ctx.clone());
+                        self.start_share();
                     }
                 }
-                Action::Direct => self.controls.direct.cancel(),
+                Action::Stop => self.stop(),
                 Action::Quit => {
                     self.quit_requested = true;
+                    self.controls.stop_sharing.cancel();
                     self.controls.stop.cancel();
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
                 #[cfg(target_os = "linux")]
                 Action::Offline => {
-                    // No host claims the tray icon: keep the window around.
                     self.tray_available = false;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
@@ -193,7 +270,6 @@ impl App {
         let dispatch = tray::dispatcher(self.tray_tx.clone(), ctx.clone());
         match Tray::new(tray::state_for(false, false, false, false), dispatch) {
             Ok(created) => {
-                // A host may still report the icon as closed (no watcher/host).
                 self.tray_available = !created.is_closed();
                 self.tray = Some(created);
             }
@@ -205,7 +281,7 @@ impl App {
     }
 
     fn sync_tray(&mut self) {
-        let state = tray::state_for(self.active, self.warming, self.direct, self.error);
+        let state = tray::state_for(self.active, self.sharing, self.watching, self.error);
         if self.tray_state != Some(state) {
             self.tray_state = Some(state);
             if let Some(tray) = &self.tray {
@@ -215,14 +291,12 @@ impl App {
     }
 
     fn phase(&self) -> usize {
-        if self.direct {
-            3
-        } else if self.warming {
-            2
-        } else if self.active {
-            1
-        } else {
+        if !self.active {
             0
+        } else if self.sharing || self.watching {
+            2
+        } else {
+            1
         }
     }
 }
@@ -243,11 +317,7 @@ impl eframe::App for App {
             if self.quit_requested {
                 // Allow the window (and event loop) to close.
             } else if self.tray_available {
-                // The forwarder is still needed: keep the process alive and
-                // move the window out of sight instead of breaking every
-                // proxied Discord connection. Both commands are sent because
-                // each backend honors a different one (Wayland ignores hide,
-                // some compositors ignore minimize); on XWayland both work.
+                // Keep the session alive and move the window out of sight.
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
@@ -259,9 +329,9 @@ impl eframe::App for App {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.vertical_centered(|ui| {
-                    ui.set_max_width(520.0);
+                    ui.set_max_width(540.0);
                     ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                        self.draw(ui, ctx)
+                        self.draw(ui, ctx);
                     });
                 });
             });
@@ -277,7 +347,7 @@ impl App {
         self.status_card(ui);
         ui.add_space(12.0);
         if self.active {
-            self.draw_active(ui);
+            self.draw_active(ui, ctx);
         } else {
             self.draw_idle(ui, ctx);
         }
@@ -293,11 +363,7 @@ impl App {
             }
             ui.vertical(|ui| {
                 ui.label(RichText::new("RelayHop").size(32.0).color(ACCENT).strong());
-                ui.label(
-                    RichText::new("TOR TEMPORÁRIO · DISCORD")
-                        .size(12.0)
-                        .color(MUTED),
-                );
+                ui.label(RichText::new("P2P · TELA").size(12.0).color(MUTED));
             });
         });
     }
@@ -312,33 +378,33 @@ impl App {
                 ui.add_space(10.0);
                 let color = if self.error {
                     DANGER
-                } else if self.direct {
+                } else if self.sharing || self.watching {
                     TEAL
                 } else {
                     ui.visuals().text_color()
                 };
                 ui.label(RichText::new(&self.status).color(color).size(15.0));
-                if self.warming && !self.direct {
-                    ui.add_space(6.0);
-                    if let Some(deadline) = self.deadline {
-                        let remaining =
-                            deadline.saturating_duration_since(Instant::now()).as_secs();
-                        ui.label(
-                            RichText::new(format!("Conexão direta em {remaining} s")).color(MUTED),
-                        );
-                        ui.add(egui::ProgressBar::new(progress(self.deadline)).show_percentage());
-                    } else {
-                        ui.label(
-                            RichText::new("Modo manual: você decide a hora da troca.").color(MUTED),
-                        );
-                    }
+                if !self.participant.is_empty() {
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(&self.participant).color(MUTED).size(13.0));
+                }
+                if !self.metrics_line.is_empty() {
+                    ui.label(RichText::new(&self.metrics_line).color(MUTED).size(13.0));
+                }
+                if let Some(redacted) = &self.current_redacted {
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new(format!("Sala {redacted}"))
+                            .color(MUTED)
+                            .size(13.0),
+                    );
                 }
             });
     }
 
     fn steps(&self, ui: &mut egui::Ui) {
         let current = self.phase();
-        let labels = ["Pronto", "Tor", "Discord", "Direta"];
+        let labels = ["Pronto", "Sala", "Ao vivo"];
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
             for (index, label) in labels.iter().enumerate() {
@@ -374,95 +440,138 @@ impl App {
         if ui
             .add_sized(
                 [ui.available_width(), 48.0],
-                egui::Button::new(RichText::new("Abrir Discord").size(17.0).strong()),
+                egui::Button::new(RichText::new("Compartilhar tela").size(17.0).strong()),
             )
             .clicked()
         {
-            self.start(ctx.clone());
+            self.start_share();
         }
         ui.add_space(8.0);
         ui.label(
-            RichText::new("Saia do Discord pela bandeja antes de começar. Uma instância aberta ignora a nova conexão.")
+            RichText::new("Convite do transmissor:")
                 .size(12.5)
                 .color(MUTED),
         );
+        ui.text_edit_singleline(&mut self.invite_input);
+        if ui
+            .add_sized(
+                [ui.available_width(), 42.0],
+                egui::Button::new(RichText::new("Entrar com convite").size(15.0)),
+            )
+            .clicked()
+        {
+            self.start_watch();
+        }
+        ui.add_space(8.0);
+        if ui.button("Rodar demonstração local (sem rede)").clicked() {
+            self.start_demo(ctx.clone());
+        }
         ui.add_space(8.0);
         ui.collapsing("Opções", |ui| self.draw_options(ui));
     }
 
-    fn draw_active(&self, ui: &mut egui::Ui) {
-        if self.warming {
-            if ui
-                .add_sized(
-                    [ui.available_width(), 46.0],
-                    egui::Button::new(
-                        RichText::new("Discord carregou — usar conexão direta")
-                            .size(15.0)
-                            .strong(),
-                    ),
-                )
-                .clicked()
-            {
-                self.controls.direct.cancel();
-            }
-            ui.add_space(8.0);
-        } else if !self.direct {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label("Preparando o salto…");
-            });
-            ui.add_space(8.0);
-        }
-        if self.direct || self.warming {
+    fn draw_active(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        if let Some(token) = self.current_token.clone()
+            && self.sharing
+        {
             ui.label(
-                RichText::new("Deixe o RelayHop na bandeja enquanto usa o Discord. Fechar a janela não encerra a sessão.")
+                RichText::new("Envie este convite ao espectador pelo Discord:")
+                    .size(12.5)
+                    .color(MUTED),
+            );
+            ui.add_space(4.0);
+            let mut display = token.clone();
+            ui.text_edit_multiline(&mut display);
+            if ui.button("Copiar convite").clicked() {
+                ctx.copy_text(token);
+            }
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(session::TRANSPORT_UNAVAILABLE)
                     .size(12.5)
                     .color(MUTED),
             );
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                if self.tray_available && ui.button("Recolher").clicked() {
-                    // Same pair as the close handler: each backend honors one.
-                    ui.ctx()
-                        .send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                    ui.ctx()
-                        .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                }
-                if ui.button("Cancelar").clicked() {
-                    self.controls.stop.cancel();
-                }
-            });
-            ui.collapsing("Encerrar manualmente", |ui| {
-                ui.label(
-                    "Isso interrompe as conexões encaminhadas do Discord. Para continuar sem RelayHop, reabra o Discord normalmente.",
-                );
-                if ui.button("Encerrar RelayHop").clicked() {
-                    self.controls.stop.cancel();
-                }
-            });
-        } else if ui.button("Cancelar").clicked() {
-            self.controls.stop.cancel();
         }
+        if self.watching {
+            ui.label(
+                RichText::new(session::TRANSPORT_UNAVAILABLE)
+                    .size(12.5)
+                    .color(MUTED),
+            );
+            ui.add_space(6.0);
+        }
+        ui.label(
+            RichText::new(
+                "Parar encerra a captura imediatamente. Fechar a janela recolhe para a bandeja.",
+            )
+            .size(12.5)
+            .color(MUTED),
+        );
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            if self.tray_available && ui.button("Recolher").clicked() {
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            }
+            if self.sharing && ui.button("Parar captura").clicked() {
+                self.controls.stop_sharing.cancel();
+            }
+            if ui.button("Encerrar").clicked() {
+                self.stop();
+            }
+        });
     }
 
     fn draw_options(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label("Saída Tor");
-            egui::ComboBox::from_id_salt("country")
-                .selected_text(&self.options.country)
-                .show_ui(ui, |ui| {
-                    for country in ["US", "DE", "NL", "CA", "FR", "GB"] {
-                        ui.selectable_value(&mut self.options.country, country.into(), country);
-                    }
-                });
-        });
-        ui.checkbox(&mut self.options.manual, "Trocar apenas quando eu clicar");
-        ui.add_enabled(
-            !self.options.manual,
-            egui::Slider::new(&mut self.options.warmup_secs, 10..=600).text("segundos pelo Tor"),
+        let sources = media::list_sources();
+        egui::ComboBox::from_id_salt("source")
+            .selected_text(&self.options.source_id)
+            .show_ui(ui, |ui| {
+                for source in &sources {
+                    ui.selectable_value(
+                        &mut self.options.source_id,
+                        source.id.clone(),
+                        &source.title,
+                    );
+                }
+            });
+        if !media::capture_available() {
+            ui.label(
+                RichText::new(
+                    "Captura real pendente do gate de mídia; fonte sintética por enquanto.",
+                )
+                .size(12.0)
+                .color(MUTED),
+            );
+        }
+        let selected = match self.options.params.codec {
+            VideoCodec::H264 => "H.264",
+            VideoCodec::Vp8 => "VP8",
+        };
+        egui::ComboBox::from_id_salt("codec")
+            .selected_text(selected)
+            .show_ui(ui, |ui| {
+                for codec in media::supported_codecs() {
+                    let label = match codec {
+                        VideoCodec::H264 => "H.264",
+                        VideoCodec::Vp8 => "VP8",
+                    };
+                    ui.selectable_value(&mut self.options.params.codec, *codec, label);
+                }
+            });
+        ui.add(egui::Slider::new(&mut self.options.params.fps, 5..=60).text("fps"));
+        ui.add(
+            egui::Slider::new(&mut self.options.params.bitrate_bps, 200_000..=8_000_000)
+                .text("bitrate (bps)"),
         );
-        ui.label("Executável do Discord (vazio = detectar)");
-        ui.text_edit_singleline(&mut self.path);
+        ui.add(egui::Slider::new(&mut self.options.demo_secs, 1..=60).text("demonstração (s)"));
+        ui.small(format!(
+            "Alvo: {}x{} · {} fps",
+            self.options.params.width, self.options.params.height, self.options.params.fps
+        ));
     }
 
     fn footer(&self, ui: &mut egui::Ui) {
@@ -472,25 +581,15 @@ impl App {
             "Bandeja indisponível neste ambiente — fechar minimiza durante a sessão."
         };
         ui.small(
-            "Sem conta, VPN global ou certificados adicionais. A disponibilidade depende das saídas Tor e do Discord.",
+            "Somente o tráfego deste app usa seu transporte. Sem VPN global, sem telemetria; logs detalhados só com RUST_LOG.",
         );
         ui.small(tray_note);
     }
 }
 
-fn progress(deadline: Option<Instant>) -> f32 {
-    // The warmup length isn't threaded through events; approximate the bar
-    // from a stable 60 s window so the UI never divides by zero.
-    deadline
-        .map(|end| {
-            let remaining = end.saturating_duration_since(Instant::now()).as_secs_f32();
-            (1.0 - remaining / 60.0).clamp(0.0, 1.0)
-        })
-        .unwrap_or(0.0)
-}
-
 impl Drop for App {
     fn drop(&mut self) {
+        self.controls.stop_sharing.cancel();
         self.controls.stop.cancel();
     }
 }

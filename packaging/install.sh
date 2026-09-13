@@ -63,7 +63,7 @@ fi
   echo "[Desktop Entry]"
   echo "Type=Application"
   echo "Name=RelayHop"
-  echo "Comment=Um salto temporário pelo Tor para abrir o Discord"
+  echo "Comment=Compartilhamento de tela P2P (o Discord fica só para voz e convites)"
   echo "Exec=$BIN_DIR/relayhop"
   echo "Icon=relayhop"
   echo "Terminal=false"

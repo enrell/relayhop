@@ -1,63 +1,42 @@
-# Validação funcional (opt-in)
+# Validação funcional
 
-Os testes automatizados não abrem Discord e não acessam Tor. Para validar a integração, execute deliberadamente os passos abaixo numa conta/dispositivo de teste.
+Os testes automatizados são offline: nada de DERP/STUN/TURN público, captura de desktop real ou contas Discord.
 
-## Verificações — 2026-09-10
+## Verificações — 2026-09-11 (migração v0.3.0, branch `migrate/p2p-share`)
 
-- **Streaming validado pelo usuário** em sessão real no Linux com o binário de release: a liberação de transmissão persistiu após a troca para conexão direta. (Versão/empacotamento do Discord usados no teste ainda a registrar.)
-- Bandeja + recolher verificados pelo agente no Hyprland (Omarchy, XWayland): fechar a janela oculta (`mapped` some da lista do compositor), processo e item StatusNotifier permanecem, e ativar o item da bandeja restaura a janela.
-- Causa raiz do recolher não funcionar antes: `Visible(false)` do winit é no-op no Wayland e o Hyprland ignora minimize — por isso a janela passou a usar XWayland automaticamente no Linux.
-- `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings` e `cargo test --locked` (8 testes) passando.
-- Release `target/release/relayhop` reconstruído com bandeja + XWayland e verificado (backend XWayland, item StatusNotifier registrado).
-
-## Verificações da implementação inicial — 2026-09-09
-
-Executadas localmente em Linux/Wayland, com Rust 1.98.1:
+Executadas localmente em Linux, Rust 1.98.1:
 
 - `cargo fmt --check`: passou.
-- `cargo clippy --all-targets --locked -- -D warnings`: passou.
-- `cargo test --locked`: sete testes passaram.
-- `cargo build --release --locked`: passou.
-- `target/release/relayhop --country US check`: HTTPS via Tor e depois direto passaram; o worker foi encerrado entre as etapas.
-- Worker recebendo EOF no pipe do pai: encerrou com código 0.
-- Interface egui abriu no Wayland sem erro; smoke tests foram encerrados por timeout controlado.
+- `cargo clippy --all-targets -- -D warnings`: passou (zero avisos).
+- `cargo test --locked`: 16 testes passaram.
+- `relayhop diag`: protocolo, convite, loopback, candidatos e plano de captura OK; Tailcat ausente no PATH (esperado); rede pública não testada.
+- `relayhop local-demo --secs 2`: 61 frames remontados, 646356 bytes enviados/recebidos, 0 descartes, ~2,6 Mbps médios (fonte sintética 720p30).
+- Lock de instância isolável em testes via `RELAYHOP_DATA_DIR`; a sessão real do usuário (0.2.x, ainda em execução na máquina) não foi perturbada.
 
-Ainda não executados: sessão autenticada/transmissão real no Discord, execução em Windows e integração funcional com cada empacotamento Linux. Os workflows Windows/Linux estão configurados, mas ainda não foram executados no GitHub.
+## Matriz opt-in (rede real, ainda não executada)
 
-## 1. Tor isolado
+| Caso | Verificação |
+|---|---|
+| Mesma LAN | caminho local e mídia funcional |
+| IPv6 global dos dois lados | caminho direto autenticado |
+| IPv4 com NAT simples | hole punching quando permitido |
+| CGNAT dos dois lados | registrar direto ou relay alcançado |
+| UDP bloqueado | relay funciona ou erro claro, sem fallback inseguro |
+| Um participante somente IPv4 | não depender de IPv6 comum inexistente |
+| Caminho direto interrompido | recuperação, autorização preservada, novo keyframe |
+| Wi-Fi para outra rede | atualização de candidatos e estado honesto |
+| Relay indisponível | timeout limitado e erro acionável |
+| Discord + jogo simultâneos | CPU/GPU/RAM e estabilidade |
+| Windows↔Linux | codec, apresentação e áudio negociados |
+| Portal cancelado/revogado | captura encerra sem travamento |
 
-```bash
-cargo run --locked -- --country US check
-```
+## Legado 0.2.x (launcher Tor, removido)
 
-Esperado: bootstrap e resposta HTTPS válida do gateway pelo encaminhador via Tor; troca de rota, encerramento do worker e outra resposta HTTPS válida pelo mesmo encaminhador em modo direto. Após a saída, não deve existir processo `relayhop tor-worker`. Não é prova de que streaming foi liberado, nem de que todas as conexões Tor usarão o mesmo nó de saída.
-
-## 2. Sessão real
-
-1. Confirme que a restrição de streaming está presente na conexão direta.
-2. Saia do Discord pela bandeja.
-3. Execute `relayhop --manual` e clique em **Abrir Discord**.
-4. Aguarde a tela inicial e confirme que a interface observou uma conexão pelo Tor.
-5. Clique em **Discord carregou — usar conexão direta**.
-6. Confirme que o worker encerrou e que o encaminhador principal permanece.
-7. Entre em uma chamada, inicie transmissão e valide voz, vídeo e reconexão.
-8. Pare e reinicie a transmissão na mesma sessão. Verifique novamente após alternar canais.
-9. Saia do Discord pela bandeja: o encaminhador deve encerrar.
-
-Repita com o temporizador automático. Inclua inicialização demorada por atualização/login; aumente o tempo ou use modo manual quando necessário.
-
-## 3. Plataformas e falhas
-
-- Windows oficial; Linux nativo; Flatpak; Snap, quando disponível.
-- Caminho explícito contendo espaços, sem alteração de argumentos.
-- Discord já aberto: erro antes do bootstrap e sem encerrar a chamada atual.
-- Tor bloqueado / saída recusada: erro legível, nenhum anúncio de liberação.
-- Cancelamento durante bootstrap: worker deve encerrar.
-- Fechar a janela durante sessão: minimiza, mantém conexão.
-- Matar o launcher: EOF no pipe deve encerrar o worker.
-- Flags ignoradas: erro após prazo sem primeira conexão.
-- Conferir que arquivos de configuração Discord permanecem intactos.
+- Streaming validado pelo usuário em sessão real no Linux (liberação persistiu após troca para direta).
+- Bandeja + recolher verificados no Hyprland (Omarchy, XWayland).
+- `relayhop --country US check`: HTTPS via Tor e direto passaram.
+- Preservado no histórico Git e nas tags; não se aplica aos binários 0.3.0+.
 
 ## Registro de resultados
 
-Registre versão do RelayHop/Discord, sistema, empacotamento, país solicitado, duração e resultado. Não inclua tokens, mensagens ou capturas com dados da conta. Compilação/CI por si só não comprova compatibilidade funcional com a versão instalada do Discord.
+Registre versão do RelayHop, sistema, redes dos dois lados, caminho observado (local/IPv6/IPv4/relay), bitrate/FPS, duração e resultado. Não inclua convites completos, tokens ou capturas com dados pessoais. Compilação/CI por si só não comprova compatibilidade com redes reais.
