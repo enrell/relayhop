@@ -410,8 +410,11 @@ func join(args []string) error {
 		}
 	}()
 	emit(map[string]string{"t": "peer", "state": "connected"})
-	// Path report: direct when hole-punching succeeded, else relay.
-	go reportPath(cl)
+	// Path report: direct when hole-punching succeeded, else relay. Kept
+	// running so a change of path is reported too (see reportPath).
+	pathDone := make(chan struct{})
+	defer close(pathDone)
+	go reportPath(cl, pathDone)
 
 	bridge := &tcpBridge{got: make(chan struct{})}
 	bridge.set(tcp)
@@ -446,17 +449,60 @@ func join(args []string) error {
 	return pumpParent(&parentDeps{tcp: bridge, udp: udpDst})
 }
 
-func reportPath(cl *tailcat.Client) {
-	// Wait for NAT traversal to settle, then sample once.
-	time.Sleep(4 * time.Second)
+func reportPath(cl *tailcat.Client, done <-chan struct{}) {
+	// Sample the transport periodically and report only CHANGES: a path that
+	// degrades (direct -> relay) or recovers must be visible in the UI instead
+	// of freezing at the first measurement. Two consecutive samples must agree
+	// before a change is reported, so a single flap is not announced as the
+	// current path.
+	const (
+		firstSample = 4 * time.Second
+		interval    = 5 * time.Second
+	)
+	select {
+	case <-done:
+		return
+	case <-time.After(firstSample):
+	}
+	reported := ""
+	pending := ""
+	pendingCount := 0
+	for {
+		kind, endpoint := samplePath(cl)
+		if kind == reported {
+			pending, pendingCount = "", 0
+		} else if kind == pending {
+			pendingCount++
+		} else {
+			pending, pendingCount = kind, 1
+		}
+		// The first measurement is reported immediately; later changes need
+		// confirmation from a second sample.
+		if kind != reported && (reported == "" || pendingCount >= 2) {
+			reported = kind
+			pending, pendingCount = "", 0
+			if kind == "direct" {
+				emit(map[string]string{"t": "path", "kind": kind, "endpoint": endpoint})
+			} else {
+				emit(map[string]string{"t": "path", "kind": kind})
+			}
+		}
+		select {
+		case <-done:
+			return
+		case <-time.After(interval):
+		}
+	}
+}
+
+// samplePath returns ("direct", endpoint), ("relay", "") or ("unknown", "").
+func samplePath(cl *tailcat.Client) (string, string) {
 	res, err := cl.DiscoPing(context.Background())
 	if err != nil {
-		emit(map[string]string{"t": "path", "kind": "unknown"})
-		return
+		return "unknown", ""
 	}
 	if res.Endpoint != "" {
-		emit(map[string]string{"t": "path", "kind": "direct", "endpoint": res.Endpoint})
-	} else {
-		emit(map[string]string{"t": "path", "kind": "relay"})
+		return "direct", res.Endpoint
 	}
+	return "relay", ""
 }

@@ -130,6 +130,55 @@ Aberto (não prometer até medir):
 - Fase 2 restante: captura real via portal, áudio do sistema, Windows,
   latência fim a fim com rede, decisão A/B/C final.
 
+## 5. Mídia real no app (2026-09-21)
+
+### Pipeline do aplicativo (Linux, GStreamer 1.28.6)
+
+`[videotestsrc | pipewiresrc] ! videoconvert ! <encoder> ! h264parse !
+video/x-h264,stream-format=byte-stream,alignment=au ! appsink`, um access unit
+por buffer; decode no espectador com `appsrc ! h264parse ! <decoder> !
+videoconvert ! RGBA ! appsink`.
+
+- **Seleção de encoder** (preferência, com verificação real de arranque):
+  `vah264enc` → `vulkanh264enc` (+`vulkanupload`) → `nvh264enc` → `qsvh264enc` →
+  `x264enc` → `openh264enc`. Um plano que não liga ou não produz frame em 5 s
+  é abandonado e o próximo é tentado.
+- **Máquina medida**: Ryzen 5 7520U com Radeon 610M. Só `vulkanh264enc`
+  disponível (sem x264/openh264 instalados).
+- **Round-trip automatizado** (`cargo test --locked`): 40 frames 320×240@10fps
+  codificados e decodificados, com ≥2 keyframes e bitrate real abaixo de 8× o
+  alvo.
+- **720p30 com padrão SMPTE** (conteúdo de alta entropia, pior caso):
+  ~4,9 Mbps medidos com o alvo de 2,5 Mbps — ver a limitação de quantizador
+  abaixo. Conteúdo de tela real comprime melhor.
+
+### Limitação medida: `vulkanh264enc` (RADV) ignora `bitrate`
+
+Com o mesmo pipeline, `bitrate=2500` produziu exatamente o mesmo tamanho em
+`cqp`, `cbr` e `vbr`, e todos os níveis de `quality` (0..10) deram saída
+idêntica: o encoder só respeita quantizador. Medições (720p30, 60 frames,
+padrão SMPTE):
+
+| `qp-i`/`qp-p` | tamanho | taxa equivalente |
+|---|---|---|
+| 18 | 3,16 MB | ~12,6 Mbps |
+| 26 | 2,33 MB | ~9,3 Mbps |
+| 32 | 1,80 MB | ~7,2 Mbps |
+| 40 | 1,06 MB | ~4,3 Mbps |
+
+Por isso o app mapeia o bitrate-alvo para um QP derivado de
+bits-por-pixel-por-segundo quando o encoder é o Vulkan (`qp-i = qp-p` em
+28..48). É heurística declarada, não promessa: a taxa real depende do conteúdo.
+Encoders que respeitam `bitrate` (`x264enc`, `openh264enc`, `vah264enc`) usam o
+valor pedido.
+
+### Matriz de redes simuladas
+
+Ver `docs/VALIDATION.md` §“Matriz de redes simuladas”: E1 LAN direta, E2 cone,
+E3 simétrico, E4 UDP bloqueado, E5 60 ms/2% perda, E6 IPv6, E7 DERP fora do ar,
+E8 troca de rede — todos com mídia H.264 real remontada **e decodificada**
+(quando a sessão deve fluir) e asserções automáticas em `sim/assert.py`.
+
 ## 6. Protocolo de medição (regras permanentes)
 
 - Medir RSS/PSS ou working set de todos os processos, CPU, engine GPU, bitrate,

@@ -6,6 +6,18 @@ edition = "2024"
 rust-version = "1.91"
 description = "P2P screen sharing for Windows and Linux (Discord stays out-of-band)"
 
+[features]
+default = ["capture"]
+# Real capture/encode/decode through GStreamer. Enabled by default where the
+# platform integration exists (Linux today); a build without it still runs the
+# CLI, the protocol and the offline demo.
+capture = [
+    "dep:gstreamer",
+    "dep:gstreamer-app",
+    "dep:gstreamer-video",
+    "dep:ashpd",
+]
+
 [dependencies]
 anyhow = "1"
 base64 = "0.22"
@@ -27,6 +39,12 @@ tray-icon = { version = "0.24", default-features = false }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ksni = { version = "0.3", features = ["blocking"] }
+# Media stack (feature `capture`): GStreamer for capture/encode/decode and
+# ashpd for the XDG ScreenCast portal (consent + PipeWire node).
+gstreamer = { version = "0.25", optional = true }
+gstreamer-app = { version = "0.25", optional = true }
+gstreamer-video = { version = "0.25", optional = true }
+ashpd = { version = "0.13", optional = true, default-features = false, features = ["tokio", "screencast"] }
 
 [build-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }

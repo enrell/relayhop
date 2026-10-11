@@ -1,5 +1,8 @@
 use std::{
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{
+        Arc, Mutex,
+        mpsc::{self, Receiver, Sender},
+    },
     time::Duration,
 };
 
@@ -63,6 +66,12 @@ struct App {
     watching: bool,
     error: bool,
     brand: Option<egui::TextureHandle>,
+    /// Latest decoded frame from the viewer session (shared, one image only).
+    view: Arc<Mutex<Option<media::DecodedImage>>>,
+    video: Option<egui::TextureHandle>,
+    /// Pending portal selection (screen/window capture consent).
+    portal_rx: Option<Receiver<Result<media::portal::CaptureSelection>>>,
+    capture: Option<media::portal::CaptureSelection>,
     tray: Option<Tray>,
     tray_tx: Sender<Action>,
     tray_rx: Receiver<Action>,
@@ -97,6 +106,10 @@ impl App {
             watching: false,
             error: false,
             brand: None,
+            view: Arc::new(Mutex::new(None)),
+            video: None,
+            portal_rx: None,
+            capture: None,
             tray: None,
             tray_tx,
             tray_rx,
@@ -117,11 +130,20 @@ impl App {
         self.error = false;
         self.participant.clear();
         self.metrics_line.clear();
+        self.video = None;
+        if let Ok(mut slot) = self.view.lock() {
+            *slot = None;
+        }
     }
 
     fn spawn_session(&mut self, context: egui::Context, role: SessionRole, status: &str) {
         self.reset_session();
         self.controls = Controls::default();
+        if matches!(role, SessionRole::Watch) {
+            // Viewer: the session thread drops decoded frames here and the UI
+            // uploads the newest one as a texture.
+            self.controls.view = Some(self.view.clone());
+        }
         self.active = true;
         self.status = status.into();
         match role {
@@ -176,7 +198,91 @@ impl App {
                 "Worker Tailcat não encontrado. Compile worker/tailcat/relay (ver README).".into();
             return;
         }
-        self.spawn_session(context, SessionRole::Share, "Iniciando transporte P2P…");
+        let kind = match self.options.source_id.as_str() {
+            "screen" => media::SourceKind::Screen,
+            "window" => media::SourceKind::Window,
+            _ => {
+                self.spawn_session(context, SessionRole::Share, "Iniciando transporte P2P…");
+                return;
+            }
+        };
+        if !media::screen_capture_available() {
+            self.reset_session();
+            self.error = true;
+            self.status = "Captura de tela indisponível: exige portal ScreenCast + PipeWire + \
+                           encoder H.264 (rode `relayhop diag` para ver o que falta)."
+                .into();
+            return;
+        }
+        // The compositor's picker is the consent step; it blocks until the
+        // user answers, so it runs on its own thread.
+        self.reset_session();
+        self.options.capture_node = None;
+        self.error = false;
+        self.status = "Escolha a fonte no seletor do sistema…".into();
+        self.portal_rx = Some(media::portal::spawn_selection(
+            kind,
+            media::portal::load_restore_token(),
+        ));
+    }
+
+    /// Poll the pending portal selection (screen/window consent).
+    fn poll_portal(&mut self, context: &egui::Context) {
+        let Some(receiver) = &self.portal_rx else {
+            return;
+        };
+        let Ok(result) = receiver.try_recv() else {
+            return;
+        };
+        self.portal_rx = None;
+        match result {
+            Ok(selection) => {
+                if let Some(token) = &selection.restore_token {
+                    media::portal::store_restore_token(token);
+                }
+                let label = selection.label.clone();
+                let node_id = selection.node_id;
+                self.options.capture_node = Some(node_id);
+                self.spawn_session(
+                    context.clone(),
+                    SessionRole::Share,
+                    &format!("Transmitindo {label} (nó PipeWire {node_id})…"),
+                );
+                // Keep the portal session alive for the whole broadcast; the
+                // compositor stops sending frames when it is dropped.
+                self.capture = Some(selection);
+            }
+            Err(error) => {
+                self.reset_session();
+                self.error = true;
+                self.status = format!("{error:#}");
+            }
+        }
+    }
+
+    /// Upload the newest decoded frame (viewer side) as an egui texture.
+    fn poll_video(&mut self, context: &egui::Context) {
+        let image = self.view.lock().ok().and_then(|mut slot| slot.take());
+        let Some(image) = image else {
+            return;
+        };
+        if image.width == 0 || image.height == 0 || image.rgba.len() < 4 {
+            return;
+        }
+        let color = egui::ColorImage::from_rgba_unmultiplied(
+            [image.width as usize, image.height as usize],
+            &image.rgba,
+        );
+        match &mut self.video {
+            Some(texture) => texture.set(color, egui::TextureOptions::LINEAR),
+            None => {
+                self.video = Some(context.load_texture(
+                    "relayhop-video",
+                    color,
+                    egui::TextureOptions::LINEAR,
+                ));
+            }
+        }
     }
 
     fn start_watch(&mut self, context: egui::Context) {
@@ -207,13 +313,15 @@ impl App {
     fn stop(&mut self) {
         self.controls.stop_sharing.cancel();
         self.controls.stop.cancel();
+        // Releasing the portal session stops the compositor's screen cast.
+        self.capture = None;
         // Offline share/watch states clear immediately; a running demo thread
         // observes the same cancellation and reports Finished.
         if self.events.is_none() {
             self.reset_session();
             self.status = "Sessão encerrada; o convite expirou com a sala.".into();
         } else {
-            self.status = "Encerrando demonstração…".into();
+            self.status = "Encerrando sessão…".into();
         }
     }
 
@@ -235,17 +343,19 @@ impl App {
                         self.active = false;
                         self.sharing = false;
                         self.watching = false;
+                        self.capture = None;
                         if self.status.starts_with("Demonstração local")
                             || self.status.starts_with("Encerrando")
                             || self.status.starts_with("Preparando")
                         {
-                            self.status = "Demonstração concluída.".into();
+                            self.status = "Sessão concluída.".into();
                         }
                     }
                     Event::Error(error) => {
                         self.active = false;
                         self.sharing = false;
                         self.watching = false;
+                        self.capture = None;
                         self.error = true;
                         self.status = error;
                     }
@@ -330,6 +440,8 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         self.receive();
+        self.poll_portal(ctx);
+        self.poll_video(ctx);
         self.ensure_tray(ctx);
         self.drain_tray(ctx);
         self.sync_tray();
@@ -337,7 +449,10 @@ impl eframe::App for App {
             self.brand = Some(crate::icon::texture(ctx));
         }
         if self.active {
-            ctx.request_repaint_after(Duration::from_millis(250));
+            ctx.request_repaint_after(Duration::from_millis(16));
+        }
+        if self.portal_rx.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(200));
         }
         if ctx.input(|input| input.viewport().close_requested()) {
             if self.quit_requested {
@@ -497,6 +612,10 @@ impl App {
     }
 
     fn draw_active(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        if self.watching {
+            self.draw_video(ui);
+            ui.add_space(6.0);
+        }
         if let Some(token) = self.current_token.clone()
             && self.sharing
         {
@@ -545,6 +664,28 @@ impl App {
         });
     }
 
+    /// Viewer: newest decoded frame, scaled to the window.
+    fn draw_video(&mut self, ui: &mut egui::Ui) {
+        match &self.video {
+            Some(texture) => {
+                let size = texture.size_vec2();
+                let width = ui.available_width().max(160.0);
+                let scale = width / size.x.max(1.0);
+                ui.add(egui::Image::new((
+                    texture.id(),
+                    egui::vec2(width, size.y * scale),
+                )));
+            }
+            None => {
+                ui.label(
+                    RichText::new("Aguardando o primeiro frame decodificado…")
+                        .size(12.5)
+                        .color(MUTED),
+                );
+            }
+        }
+    }
+
     fn draw_options(&mut self, ui: &mut egui::Ui) {
         let sources = media::list_sources();
         egui::ComboBox::from_id_salt("source")
@@ -554,22 +695,36 @@ impl App {
                     ui.selectable_value(
                         &mut self.options.source_id,
                         source.id.clone(),
-                        &source.title,
+                        if source.available {
+                            source.title.clone()
+                        } else {
+                            format!("{} (indisponível)", source.title)
+                        },
                     );
                 }
             });
-        if !media::capture_available() {
-            ui.label(
-                RichText::new(
-                    "Captura real pendente do gate de mídia; fonte sintética por enquanto.",
-                )
-                .size(12.0)
-                .color(MUTED),
-            );
+        if let Some(source) = sources
+            .iter()
+            .find(|source| source.id == self.options.source_id)
+        {
+            ui.label(RichText::new(&source.note).size(12.0).color(MUTED));
         }
+        let encoder = media::encoder_name();
+        ui.label(
+            RichText::new(format!(
+                "encoder: {encoder} · decodificador: {}",
+                if media::capture_available() {
+                    "H.264 (GStreamer)"
+                } else {
+                    "indisponível neste build"
+                }
+            ))
+            .size(12.0)
+            .color(MUTED),
+        );
         let selected = match self.options.params.codec {
             VideoCodec::H264 => "H.264",
-            VideoCodec::Vp8 => "VP8",
+            VideoCodec::Vp8 => "VP8 (não suportado)",
         };
         egui::ComboBox::from_id_salt("codec")
             .selected_text(selected)
@@ -577,7 +732,7 @@ impl App {
                 for codec in media::supported_codecs() {
                     let label = match codec {
                         VideoCodec::H264 => "H.264",
-                        VideoCodec::Vp8 => "VP8",
+                        VideoCodec::Vp8 => "VP8 (não suportado)",
                     };
                     ui.selectable_value(&mut self.options.params.codec, *codec, label);
                 }

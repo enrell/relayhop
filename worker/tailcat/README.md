@@ -24,8 +24,11 @@ vez; há teste contra regressão implícita na forma do framing).
   (que só responde ao que já viu) e mantém o NAT aberto; descartado no par,
   nunca entregue ao app. Datagramas do app têm ≥20 bytes.
 - Um espectador por sala: primeira conexão TCP vence, demais recusadas.
-- Caminho (`direct|relay`) reportado pelo cliente via DiscoPing; servidor não
-  tem API equivalente — o host exibe o `Link` do espectador.
+- Caminho (`direct|relay`) amostrado a cada ~5 s no lado do espectador
+  (`DiscoPing`) e reemitido **quando muda**, com histerese (duas amostras
+  concordando), para que degradação/recuperação apareçam na UI em vez de
+  congelar na primeira medição; o servidor não tem API equivalente — o host
+  exibe o `Link` reportado pelo espectador.
 - EOF no stdin encerra; `kill_on_drop` no pai; `F_CLOSE` + espera no
   desligamento gracioso. Falha fecha, nunca cai para socket sem criptografia.
 - `gofmt`, `go vet`, `go test` limpos (framing tem teste unitário).

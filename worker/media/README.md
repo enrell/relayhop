@@ -1,5 +1,13 @@
 # worker/media — protótipos da fase 2 (gate de mídia)
 
+> **Estado (2026-09-21):** o pipeline real de captura/encode/decode agora vive no
+> aplicativo (`src/media/gst.rs` + `src/media/portal.rs`), em Rust com
+> GStreamer: `pipewiresrc` (portal ScreenCast) ou `videotestsrc` → encoder
+> H.264 → packetização; no espectador, `appsrc` → decode → RGBA → textura. Esta
+> pasta continua sendo o **harness de medição** (orçamento de encoders, RTP,
+> WebRTC de referência, soak) usado para escolher o caminho — números em
+> `docs/BENCHMARKS.md` §3 e §5.
+
 Tudo aqui é **prova técnica offline**, sem rede pública, sem captura real de
 desktop, sem Discord. Os scripts assumem plugins GStreamer extras via
 `GST_PLUGIN_PATH` (extraídos de pacotes Arch sem root; ver `docs/BENCHMARKS.md`).

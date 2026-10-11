@@ -1,3 +1,7 @@
 /target/
 /dist/
 *.log
+
+# Simulation harness: build outputs and per-run results
+/.sim-bin/
+/sim/results/

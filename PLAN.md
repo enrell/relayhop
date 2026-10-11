@@ -3,6 +3,33 @@
 Status: planejamento, sem implementação aprovada por este documento.
 Data: 2026-09-11.
 
+## Estado da execução (2026-09-21)
+
+Resumo honesto do que está implementado e medido; o plano abaixo continua sendo
+ a referência de escopo.
+
+- **Fase 0–1 — concluídas.** Worker Tailcat supervisionado, DERP privado medido,
+  matriz CGNAT simulada (`worker/tailcat/sim/`), probe de medição.
+- **Fase 2 — parcial (Linux).** Mídia real no aplicativo: captura pelo portal
+  ScreenCast + PipeWire, encode H.264 com seleção/fallback entre backends,
+  decode no espectador, pedido de keyframe e watchdog de captura. Windows
+  continua pendente: a feature `capture` não é compilada lá e a UI declara isso.
+  A escolha formal A/B/C ainda não foi escrita: o que está em uso é o
+  transporte Tailcat (opção B) com mídia H.264 própria — os números estão em
+  `docs/BENCHMARKS.md` §2/§5.
+- **Fase 3 — concluída no essencial.** Supervisor, convites, negociação,
+  cancelamento, CLI `host`/`watch`/`local-demo`/`diag`, remoção do Arti/Tor.
+- **Fase 4 — concluída no essencial.** UI com escolha de fonte (portal),
+  convite copiável, vídeo do espectador, métricas e bandeja. Tela cheia do
+  espectador ainda não existe.
+- **Fase 5 — pendente.** Áudio do sistema, adaptação de bitrate por feedback e
+  reconexão explícita na UI.
+- **Fase 6 — pendente.** Empacotamento do conjunto GStreamer, notices de
+  licença, instaladores multi-arquivo e release.
+- **Novo desde o plano:** matriz de redes simuladas (`sim/`) rodando o
+  aplicativo real em namespaces isolados — E1..E8, documentada em
+  `sim/README.md` e `docs/VALIDATION.md`.
+
 ## 1. Objetivo
 
 Transformar o RelayHop, hoje um launcher do Discord com encaminhamento TCP via

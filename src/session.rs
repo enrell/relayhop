@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     invite::{DEFAULT_INVITE_TTL_SECS, Invite},
-    media::MediaPipeline,
+    media::{Decoder, MediaInput, MediaPipeline},
     metrics::{Metrics, PathKind, Sample},
     protocol::{Control, FrameDecoder, PROTOCOL_VERSION, Reassembler, VideoParams, encode_control},
     transport::{
@@ -30,12 +30,16 @@ use crate::{
 
 pub const DEFAULT_TCP_PORT: u16 = 4106;
 pub const DEFAULT_UDP_PORT: u16 = 4107;
+/// A capture that produces no frames for this long is treated as failed.
+pub const STALL_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone)]
 pub struct Options {
     pub params: VideoParams,
     pub demo_secs: u64,
     pub source_id: String,
+    /// PipeWire node chosen in the portal picker (screen/window capture).
+    pub capture_node: Option<u32>,
     pub derp_map: String,
     pub tcp_port: u16,
     pub udp_port: u16,
@@ -47,6 +51,7 @@ impl Default for Options {
             params: VideoParams::default(),
             demo_secs: 10,
             source_id: "synthetic-720p30".into(),
+            capture_node: None,
             derp_map: String::new(),
             tcp_port: DEFAULT_TCP_PORT,
             udp_port: DEFAULT_UDP_PORT,
@@ -55,6 +60,30 @@ impl Default for Options {
 }
 
 impl Options {
+    /// Concrete media input for this session (source id + portal selection).
+    ///
+    /// `RELAYHOP_PIPEWIRE_NODE=<id>` is a test/debug hook: it points the encoder
+    /// at an existing PipeWire node instead of opening the portal picker, so the
+    /// capture→encode→transport→decode chain can be exercised by scripts. It is
+    /// never used by the UI, which always goes through the portal.
+    pub fn media_input(&self) -> Result<MediaInput> {
+        if let Some(node_id) = debug_pipewire_node() {
+            return Ok(MediaInput::PipeWire { node_id });
+        }
+        MediaInput::from_source_id(&self.source_id, self.capture_node)
+    }
+
+    /// Media input for the offline demo: falls back to the pure-Rust pattern
+    /// when this build/machine cannot encode, so `local-demo` always runs.
+    pub fn demo_media_input(&self) -> MediaInput {
+        match self.media_input() {
+            Ok(MediaInput::Pattern) => MediaInput::Pattern,
+            Ok(_) if crate::media::capture_available() => {
+                self.media_input().unwrap_or(MediaInput::Pattern)
+            }
+            _ => MediaInput::Pattern,
+        }
+    }
     pub fn validate(&self) -> Result<()> {
         self.params.validate()?;
         crate::media::ensure_supported(self.params.codec)?;
@@ -100,6 +129,9 @@ pub enum Event {
 pub struct Controls {
     pub stop: CancellationToken,
     pub stop_sharing: CancellationToken,
+    /// Latest decoded frame, shared with the UI on the viewer side. `None` for
+    /// the CLI: the supervisor then discards images as they arrive.
+    pub view: Option<std::sync::Arc<std::sync::Mutex<Option<crate::media::DecodedImage>>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,6 +218,14 @@ impl ParticipantState {
             Self::Failed => "falha",
         }
     }
+}
+
+/// Test/debug hook: explicit PipeWire node from the environment (see
+/// [`Options::media_input`]). Bounded and never used by the UI.
+fn debug_pipewire_node() -> Option<u32> {
+    let raw = std::env::var("RELAYHOP_PIPEWIRE_NODE").ok()?;
+    let node = raw.trim().parse::<u32>().ok()?;
+    (node > 0).then_some(node)
 }
 
 pub fn now_secs() -> u64 {
@@ -358,8 +398,11 @@ async fn run_local_demo_inner(
     let active = ParticipantState::Active(viewer_media.path);
     send(Event::Participant(active.describe().into()));
 
-    let mut pipeline = MediaPipeline::new(options.params)?;
+    let demo_input = options.demo_media_input();
+    let mut pipeline = MediaPipeline::new(options.params, demo_input.clone())?;
+    send(Event::Status(format!("vídeo: {}", demo_input.describe())));
     let mut reassembler = Reassembler::new();
+    let mut decoder = Decoder::new();
     let mut metrics = Metrics::new();
     let tick = pipeline.frame_interval().max(Duration::from_millis(5));
     let mut ticker = interval(tick);
@@ -385,6 +428,9 @@ async fn run_local_demo_inner(
                 if start.elapsed() >= budget {
                     break;
                 }
+                if let Some(error) = pipeline.take_error() {
+                    bail!("encode parou: {error}");
+                }
                 if sharing
                     && let Some(datagrams) = pipeline.try_next_datagrams(0)?
                 {
@@ -403,9 +449,13 @@ async fn run_local_demo_inner(
                     let packet = crate::protocol::MediaPacket::decode(&bytes)?;
                     if let Some(frame) = reassembler.insert(packet)? {
                         frames += 1;
-                        // Synthetic payload is pattern data; receipt + reassembly is the check.
-                        std::hint::black_box(frame.payload.len());
+                        decoder.push(&frame)?;
                     }
+                }
+                // The demo decodes too, so the codec round-trip is exercised
+                // offline (no decoder available -> this is a no-op).
+                if let Some(image) = decoder.take_latest() {
+                    std::hint::black_box(image.rgba.len());
                 }
                 if last_metrics.elapsed() >= Duration::from_millis(500) {
                     last_metrics = Instant::now();
@@ -434,14 +484,18 @@ async fn run_local_demo_inner(
         while let Some(bytes) = viewer_media.try_recv() {
             progressed = true;
             let packet = crate::protocol::MediaPacket::decode(&bytes)?;
-            if reassembler.insert(packet)?.is_some() {
+            if let Some(frame) = reassembler.insert(packet)? {
                 frames += 1;
+                decoder.push(&frame)?;
             }
         }
         if !progressed {
             break;
         }
     }
+    let decoded = decoder.decoded_frames();
+    let dropped_decode = decoder.dropped_frames();
+    decoder.stop();
 
     let (host_tx_bytes, host_rx_bytes) = host_media.counters();
     let (viewer_tx_bytes, viewer_rx_bytes) = viewer_media.counters();
@@ -461,6 +515,9 @@ async fn run_local_demo_inner(
         reassembled: reassembler.completed(),
         dropped_transport: reassembler.dropped(),
         dropped_pipeline: pipeline.dropped_frames,
+        decoded,
+        dropped_decode,
+        backend: pipeline.backend(),
         tx_bytes: host_tx_bytes,
         rx_bytes: viewer_rx_bytes,
         avg_bitrate_bps: metrics.avg_bitrate_bps(),
@@ -529,6 +586,38 @@ pub async fn diagnose() -> Result<String> {
         let _ = kind;
         lines.push(format!("captura {name}: {status}"));
     }
+    #[cfg(all(feature = "capture", target_os = "linux"))]
+    {
+        lines.extend(crate::media::gst::describe());
+        let probe = VideoParams {
+            width: 320,
+            height: 240,
+            fps: 10,
+            bitrate_bps: 500_000,
+            ..params
+        };
+        let roundtrip = crate::media::gst::encode_selftest(probe, 6)
+            .and_then(|frames| crate::media::gst::decode_selftest(&frames));
+        match roundtrip {
+            Ok(decoded) => lines.push(format!(
+                "codec H.264: encode+decode OK ({decoded} imagens decodificadas no teste)"
+            )),
+            Err(error) => lines.push(format!("codec H.264: indisponível ({error})")),
+        }
+        lines.push(format!(
+            "portal ScreenCast: {}",
+            if tokio::time::timeout(Duration::from_secs(3), crate::media::portal::available())
+                .await
+                .unwrap_or(false)
+            {
+                "disponível (a escolha da fonte acontece no seletor do sistema)"
+            } else {
+                "não respondeu (xdg-desktop-portal rodando?)"
+            }
+        ));
+    }
+    #[cfg(not(all(feature = "capture", target_os = "linux")))]
+    lines.push("captura real: não compilada nesta plataforma (feature `capture`)".into());
     match crate::display::preserved() {
         Some(vars) => lines.push(format!(
             "ambiente de sessão preservado: {} vars",
@@ -742,11 +831,14 @@ async fn run_host_inner(
         ParticipantState::Active(peer_path).describe().into(),
     ));
 
-    let mut pipeline = MediaPipeline::new(options.params)?;
+    let media_input = options.media_input()?;
+    let mut pipeline = MediaPipeline::new(options.params, media_input.clone())?;
+    send(Event::Status(format!("vídeo: {}", media_input.describe())));
     let mut metrics = Metrics::new();
     let tick = pipeline.frame_interval().max(Duration::from_millis(5));
     let mut ticker = interval(tick);
     let start = Instant::now();
+    let mut last_frame_at = Instant::now();
     let mut last_metrics = Instant::now();
     let mut decoder = FrameDecoder::new();
     loop {
@@ -766,16 +858,34 @@ async fn run_host_inner(
                 }
             }
             chunk = control_rx.recv() => {
-                let Some(chunk) = chunk else { bail!("controle encerrado") };
+                let Some(chunk) = chunk else {
+                    // The viewer's control stream is gone: end the session
+                    // cleanly (the room closes) instead of reporting an error.
+                    send(Event::Status("Espectador desconectou; encerrando a sessão.".into()));
+                    break;
+                };
+                let mut left = false;
                 for message in decoder.push(&chunk)? {
                     match message {
-                        Control::Bye { reason } => bail!("encerrado pelo par: {reason}"),
+                        Control::Bye { reason } => {
+                            send(Event::Status(format!("Espectador encerrou: {reason}")));
+                            left = true;
+                        }
                         Control::Link { path } => {
                             peer_path = path;
                             send(Event::Participant(ParticipantState::Active(path).describe().into()));
                         }
+                        Control::KeyframeRequest { .. } => {
+                            // The viewer lost a reference: force an IDR so it can
+                            // resynchronize instead of showing artifacts.
+                            let forced = pipeline.request_keyframe();
+                            tracing::debug!(forced, "pedido de keyframe do espectador");
+                        }
                         _ => {}
                     }
+                }
+                if left {
+                    break;
                 }
             }
             _ = ticker.tick() => {
@@ -787,10 +897,34 @@ async fn run_host_inner(
                     send(Event::Participant("captura parada pelo transmissor".into()));
                     break;
                 }
+                // A dead encoder (revoked screen cast, lost device) must end
+                // the session instead of streaming silence forever.
+                if let Some(error) = pipeline.take_error() {
+                    send(Event::Status(format!("captura/encode parou: {error}")));
+                    let _ = tx
+                        .send_control(&encode_control(&Control::Bye {
+                            reason: "captura encerrada".into(),
+                        })?)
+                        .await;
+                    break;
+                }
                 if let Some(datagrams) = pipeline.try_next_datagrams(0)? {
+                    last_frame_at = Instant::now();
                     for datagram in datagrams {
                         tx.send_media(&datagram).await?;
                     }
+                } else if last_frame_at.elapsed() > STALL_TIMEOUT {
+                    // Bounded watchdog: capture that produces nothing is a
+                    // failure the viewer must see, not a silent freeze.
+                    send(Event::Status(
+                        "captura não produziu frames; encerrando a transmissão".into(),
+                    ));
+                    let _ = tx
+                        .send_control(&encode_control(&Control::Bye {
+                            reason: "captura parada".into(),
+                        })?)
+                        .await;
+                    break;
                 }
                 if last_metrics.elapsed() >= Duration::from_millis(500) {
                     last_metrics = Instant::now();
@@ -813,12 +947,16 @@ async fn run_host_inner(
             reason: "sessão encerrada".into(),
         })?)
         .await;
+    pipeline.stop();
     *room = room.finish()?;
     let report = DemoReport {
         frames: pipeline.sent_frames,
         reassembled: 0,
         dropped_transport: 0,
         dropped_pipeline: pipeline.dropped_frames,
+        decoded: 0,
+        dropped_decode: 0,
+        backend: pipeline.backend(),
         tx_bytes: pipeline.sent_bytes,
         rx_bytes: 0,
         avg_bitrate_bps: metrics.avg_bitrate_bps(),
@@ -958,9 +1096,22 @@ async fn run_watch_inner(
 
     let mut reassembler = Reassembler::new();
     let mut metrics = Metrics::new();
+    let mut video_decoder = Decoder::new();
+    if video_decoder.available() {
+        send(Event::Status(format!(
+            "decodificador: {}",
+            video_decoder.backend().unwrap_or("desconhecido")
+        )));
+    } else {
+        send(Event::Status(
+            "sem decodificador H.264: os frames são remontados mas não exibidos".into(),
+        ));
+    }
     let start = Instant::now();
     let mut frames = 0u64;
     let mut rx_bytes = 0u64;
+    let mut last_seq: Option<u32> = None;
+    let mut keyframe_requests = 0u64;
     let mut last_metrics = Instant::now();
     let mut decoder = FrameDecoder::new();
     loop {
@@ -988,7 +1139,16 @@ async fn run_watch_inner(
                 for message in decoder.push(&chunk)? {
                     if let Control::Bye { .. } = message {
                         send(Event::Status("Transmissor encerrou a sessão.".into()));
-                        return finish_watch(metrics, reassembler, frames, rx_bytes, &controls);
+                        return finish_watch(
+                            metrics,
+                            reassembler,
+                            frames,
+                            rx_bytes,
+                            video_decoder.decoded_frames(),
+                            video_decoder.dropped_frames(),
+                            video_decoder.backend().unwrap_or("nenhum").to_string(),
+                            &controls,
+                        );
                     }
                 }
             }
@@ -998,7 +1158,30 @@ async fn run_watch_inner(
                 let packet = crate::protocol::MediaPacket::decode(&bytes)?;
                 if let Some(frame) = reassembler.insert(packet)? {
                     frames += 1;
-                    std::hint::black_box(frame.payload.len());
+                    // A gap in sequence numbers means a reference frame was
+                    // lost: ask the encoder for an IDR instead of decoding
+                    // against a missing reference.
+                    if let Some(previous) = last_seq
+                        && frame.seq != previous.wrapping_add(1)
+                    {
+                        let _ = tx
+                            .send_control(&encode_control(&Control::KeyframeRequest {
+                                seq: frame.seq,
+                            })?)
+                            .await;
+                        keyframe_requests += 1;
+                    }
+                    last_seq = Some(frame.seq);
+                    video_decoder.push(&frame)?;
+                    if let Some(view) = &controls.view {
+                        // UI path: hand the newest image over (one frame only).
+                        if let Some(image) = video_decoder.take_latest() {
+                            *view.lock().expect("view slot") = Some(image);
+                        }
+                    } else if let Some(image) = video_decoder.take_latest() {
+                        // CLI path: keep the decoder drained.
+                        std::hint::black_box(image.rgba.len());
+                    }
                 }
                 if last_metrics.elapsed() >= Duration::from_millis(500) {
                     last_metrics = Instant::now();
@@ -1016,14 +1199,30 @@ async fn run_watch_inner(
             }
         }
     }
-    finish_watch(metrics, reassembler, frames, rx_bytes, &controls)
+    let _ = keyframe_requests;
+    let report = finish_watch(
+        metrics,
+        reassembler,
+        frames,
+        rx_bytes,
+        video_decoder.decoded_frames(),
+        video_decoder.dropped_frames(),
+        video_decoder.backend().unwrap_or("nenhum").to_string(),
+        &controls,
+    );
+    video_decoder.stop();
+    report
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finish_watch(
     metrics: Metrics,
     reassembler: Reassembler,
     frames: u64,
     rx_bytes: u64,
+    decoded: u64,
+    dropped_decode: u64,
+    backend: String,
     controls: &Controls,
 ) -> Result<DemoReport> {
     Ok(DemoReport {
@@ -1031,6 +1230,9 @@ fn finish_watch(
         reassembled: reassembler.completed(),
         dropped_transport: reassembler.dropped(),
         dropped_pipeline: 0,
+        decoded,
+        dropped_decode,
+        backend,
         tx_bytes: 0,
         rx_bytes,
         avg_bitrate_bps: metrics.avg_bitrate_bps(),
@@ -1039,12 +1241,18 @@ fn finish_watch(
     })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DemoReport {
     pub frames: u64,
     pub reassembled: u64,
     pub dropped_transport: u64,
     pub dropped_pipeline: u64,
+    /// Frames actually decoded by the viewer (0 when there is no decoder).
+    pub decoded: u64,
+    /// Frames the decoder refused/dropped (no reference, full queue).
+    pub dropped_decode: u64,
+    /// Encoder/decoder description, for honest status lines.
+    pub backend: String,
     pub tx_bytes: u64,
     pub rx_bytes: u64,
     pub avg_bitrate_bps: u32,
@@ -1059,6 +1267,9 @@ impl DemoReport {
             reassembled: 0,
             dropped_transport: 0,
             dropped_pipeline: 0,
+            decoded: 0,
+            dropped_decode: 0,
+            backend: String::new(),
             tx_bytes: 0,
             rx_bytes: 0,
             avg_bitrate_bps: 0,
